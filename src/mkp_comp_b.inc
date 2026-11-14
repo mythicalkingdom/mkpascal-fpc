@@ -33,6 +33,7 @@ begin
   if E is TLoad then Exit(TLoad(E).Addr);
   if E is TLoadGlobalInt then Exit(TGlobalAddr.Create(TLoadGlobalInt(E).Addr, E.Typ));
   if E is TLoadLocalInt then Exit(TLocalAddr.Create(TLoadLocalInt(E).Offset, 0, E.Typ));
+  if E.IsLValue and (E.Typ.Kind = tyOpenArray) then Exit(TOpenData.Create(E, FImage.Types.TUntyped));
   if E.IsLValue then Exit(E);
   Err('Variable expected');
   Result := nil;
@@ -179,7 +180,13 @@ begin
         if T.Kind = tyString then
         begin
           Idx := Coerce(Idx, FImage.Types.TInteger, ' in string index');
+          if not Result.IsLValue then Result := TTempStr.Create(Result, TempVar(FImage.Types.TString), FImage.Types.TString);
           Result := TStrElemAddr.Create(Result, Idx, T.MaxLen, FImage.Types.TChar);
+        end
+        else if T.Kind = tyOpenArray then
+        begin
+          if (Idx.Typ.ExprClass <> ecInt) or (HostOf(Idx.Typ).Kind <> tyInt) then Err('Integer expression expected in array index');
+          Result := TOpenIndexAddr.Create(Result, Idx, T.Elem.Size, T.Elem);
         end
         else if T.Kind = tyArray then
         begin
@@ -192,6 +199,8 @@ begin
       until not AcceptSym(',');
       ExpectSym(']');
     end
+    else if IsSym('(') and (HostOf(Result.Typ).Kind = tyProc) then
+      Result := BuildProcCall(Result)
     else if IsSym('^') then
     begin
       Next;
@@ -334,6 +343,7 @@ var
   S: ShortString;
   V: Int64;
   M: TRoutine;
+  SkipN, K: Integer;
 begin
   T := Tok;
   case Tok.Kind of
@@ -382,6 +392,17 @@ begin
         else if IsSym('@') then
         begin
           Next;
+          if Tok.Kind = tkIdent then
+          begin
+            Sym := ResolveAhead(SkipN);
+            if (Sym <> nil) and (Sym.Kind = skBuiltin) then Err('Cannot take the address of a standard routine');
+            if (Sym <> nil) and (Sym.Kind = skRoutine) then
+            begin
+              T := Tok;
+              for K := 0 to SkipN do Next;
+              Exit(ProcRef(Sym.Routine, T));
+            end;
+          end;
           E := ParseFactor();
           E := LValueOf(E);
           Result := TAddrOf.Create(E, FImage.Types.PtrType(E.Typ));

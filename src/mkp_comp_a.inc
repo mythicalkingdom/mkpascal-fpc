@@ -50,12 +50,14 @@ begin
   Scopes := TObjectList.Create(True);
   ObjTypes := TList.Create;
   UnitInits := TList.Create;
+  ProcTable := TList.Create;
 end;
 
 destructor TProgramImage.Destroy;
 begin
   ObjTypes.Free;
   UnitInits.Free;
+  ProcTable.Free;
   Pool.Free;
   Routines.Free;
   Scopes.Free;
@@ -75,6 +77,7 @@ begin
   if LstAddr <> 0 then C.SetStdFile(LstAddr, ckLst);
   C.ProgramName := Name;
   C.ObjTypes := ObjTypes;
+  C.ProcTable := ProcTable;
   C.DosErrorAddr := DosErrorAddr;
 end;
 
@@ -533,7 +536,7 @@ begin
     Exit(FImage.Types.TString);
   end;
   if IsKw('object') then Err('Object types must be declared in a type section (type T = object ... end)');
-  if IsKw('procedure') or IsKw('function') then Err('Procedural types are not implemented yet');
+  if IsKw('procedure') or IsKw('function') then Exit(ParseProcType());
   { subrange or type name }
   if Tok.Kind = tkIdent then
   begin
@@ -768,7 +771,7 @@ begin
     ExpectSym(')');
     Exit;
   end;
-  E := Coerce(RValue(ParseExpr), T, 'constant');
+  E := Coerce(RValue(ParseExprFor(T)), T, 'constant');
   ConstOf(E);
   case T.ExprClass of
     ecInt:
@@ -916,8 +919,14 @@ begin
       T := nil;
       if AcceptSym(':') then
       begin
-        if IsKw('array') then Err('Open array parameters are not implemented yet');
-        T := ParseType;
+        if IsKw('array') then
+        begin
+          Next;
+          ExpectKw('of');
+          T := FImage.Types.OpenArrayType(ParseType());
+        end
+        else
+          T := ParseType;
       end
       else if Mode = pmValue then Err('Parameter type expected');
       for I := 0 to Names.Count - 1 do
@@ -927,7 +936,9 @@ begin
         P.Typ := T;
         P.Mode := Mode;
         P.Offset := Off;
-        if (Mode = pmVar) or (T = nil) then Inc(Off, 4) else Inc(Off, T.Size);
+        if (T <> nil) and (T.Kind = tyOpenArray) then Inc(Off, 8)
+        else if (Mode = pmVar) or (T = nil) then Inc(Off, 4)
+        else Inc(Off, T.Size);
         if Off and 1 <> 0 then Inc(Off);
         R.Params.Add(P);
       end;
@@ -955,6 +966,7 @@ var
   NewParams: TRoutine;
   OwnerT, X: TType;
   F: TField;
+  SavedLabels: TLabelState;
 begin
   Kind := Tok.Key;
   IsFunc := Kind = 'function';
@@ -1082,6 +1094,7 @@ begin
   SavedScope := FScope;
   FRoutine := R;
   FLevel := R.Level;
+  BeginLabelScope(SavedLabels);
   SelfV := nil;
   if R.Owner <> nil then
   begin
@@ -1130,7 +1143,7 @@ begin
       V.Typ := P.Typ;
       V.Level := FLevel;
       V.Offset := P.Offset;
-      V.ByRef := (P.Mode = pmVar) or (P.Typ = nil);
+      V.ByRef := ((P.Mode = pmVar) and ((P.Typ = nil) or (P.Typ.Kind <> tyOpenArray))) or (P.Typ = nil);
       V.Untyped := P.Typ = nil;
       if V.Untyped then V.Typ := FImage.Types.TUntyped;
     end;
@@ -1151,6 +1164,8 @@ begin
   ParseDecls;
   Body := ParseCompound;
   ExpectSym(';');
+  ResolveGotos;
+  EndLabelScope(SavedLabels);
   R.Body := Body;
   R.Defined := True;
   R.FrameSize := (FFrameTop + 7) and not 7;

@@ -10,7 +10,7 @@ uses
 
 type
   TTypeKind = (tyInt, tyBool, tyChar, tyEnum, tyReal, tyString, tyArray, tyRecord, tySet,
-               tyPtr, tyFile, tyProc, tyObject, tyNil, tyVoid, tyUntyped);
+               tyPtr, tyFile, tyProc, tyObject, tyNil, tyVoid, tyUntyped, tyOpenArray);
 
   TRealKind = (rkReal6, rkSingle, rkDouble, rkExtended, rkComp);
 
@@ -84,6 +84,7 @@ type
     function ArrayType(AIndex, AElem: TType): TType;
     function SetType(ABase: TType): TType;
     function PtrType(ABase: TType): TType;
+    function OpenArrayType(AElem: TType): TType;
     function FileType(AElem: TType): TType;
     function EnumType(Names: TStrings): TType;
     function IntTypeFor(ALo, AHi: Int64): TType;
@@ -139,7 +140,7 @@ begin
     tyReal: Result := ecReal;
     tyString: Result := ecStr;
     tySet: Result := ecSet;
-    tyArray, tyRecord, tyObject, tyFile: Result := ecMem;
+    tyArray, tyRecord, tyObject, tyFile, tyOpenArray: Result := ecMem;
   else
     Result := ecVoid;
   end;
@@ -272,6 +273,14 @@ begin
   Result.Size := 4;
 end;
 
+function TTypeStore.OpenArrayType(AElem: TType): TType;
+begin
+  Result := NewType(tyOpenArray);
+  Result.Elem := AElem;
+  Result.Size := 8;                      // address and highest index, in the parameter slot
+  Result.Name := 'array of ' + TypeName(AElem);
+end;
+
 function TTypeStore.FileType(AElem: TType): TType;
 begin
   Result := NewType(tyFile);
@@ -343,6 +352,7 @@ begin
     tyInt, tyBool, tyChar, tyEnum: Result := (HostOf(A) = HostOf(B)) and (A.Lo = B.Lo) and (A.Hi = B.Hi);
     tyReal: Result := A.RealKind = B.RealKind;
     tyProc: Result := ProcCompat(A, B);
+    tyOpenArray: Result := SameType(A.Elem, B.Elem);
   end;
 end;
 

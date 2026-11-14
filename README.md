@@ -9,7 +9,7 @@ screen, keyboard or file system any other way. It is the Free Pascal port of the
 
 ```
 make            # needs fpc 3.2.x; builds bin/mkpas, bin/runtests, bin/test_api, bin/embed
-make test       # 80+ program tests (tests/cases) + embedding API checks
+make test       # 99 program tests (tests/cases) + embedding API checks
 bin/mkpas examples/hello.pas
 ```
 
@@ -58,5 +58,7 @@ or registered with `Session.AddUnit`; qualified names, shadowing, init order, im
 **Dos routines** through the harness (`FindFirst/FindNext`, `GetFTime/SetFTime`, `GetDate/GetTime` from a clock you
 can set, `PackTime/UnpackTime`, `FSplit`, `FExpand`, `SearchRec`, `DateTime`, `DosError`).
 
-Not yet ported from the JavaScript version: procedural types, `goto`, open array parameters.
-See `CLAUDE.md` for the plan.
+**Procedural types** (`type TFn = function(x: integer): integer;`, `@Foo`, arrays and fields of them, callbacks),
+local **`goto`** and **open array parameters** (`array of T`, value/`var`/`const`, `High`) are in too. Everything the
+JavaScript version runs now runs here, including its `invent` example (units, objects, `Fail`, a sort callback, Crt,
+typed files). See `CLAUDE.md` for the design notes.

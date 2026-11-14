@@ -37,6 +37,8 @@ type
     IsVirtual, IsCtor, IsDtor: Boolean;
     VIndex: Integer;           // virtual methods: slot in the VMT
     Intf: Boolean;             // declared in a unit's interface
+    ProcId: Integer;           // procedural value of the routine (0 = its address was never taken)
+    ProcType: TType;
     constructor Create;
     destructor Destroy; override;
   end;
@@ -153,6 +155,40 @@ type
     MaxLen: Integer;
     constructor Create(ABase, AIndex: TExpr; AMaxLen: Integer; AType: TType);
     function EvalA(C: TRun): TAddr; override;
+  end;
+
+  { a string value (function result, constant, concatenation) held in a scratch variable so that it can be indexed }
+  TTempStr = class(TAddrExpr)
+  public
+    Src, Temp: TExpr;
+    constructor Create(ASrc, ATemp: TExpr; AType: TType);
+    function EvalA(C: TRun): TAddr; override;
+    function IsLValue: Boolean; override;
+  end;
+
+  { element of an open array parameter: the slot holds the address and the highest index }
+  TOpenIndexAddr = class(TAddrExpr)
+  public
+    Slot, Index: TExpr;
+    ElemSize: Integer;
+    constructor Create(ASlot, AIndex: TExpr; AElemSize: Integer; AType: TType);
+    function EvalA(C: TRun): TAddr; override;
+  end;
+
+  { the data of an open array parameter, for Move/FillChar/BlockRead and friends }
+  TOpenData = class(TAddrExpr)
+  public
+    Slot: TExpr;
+    constructor Create(ASlot: TExpr; AType: TType);
+    function EvalA(C: TRun): TAddr; override;
+  end;
+
+  { High(a) of an open array parameter }
+  TOpenHigh = class(TExpr)
+  public
+    Slot: TExpr;
+    constructor Create(ASlot: TExpr; AType: TType);
+    function EvalI(C: TRun): Int64; override;
   end;
 
   { same address, another type (variable typecast) }
@@ -355,6 +391,10 @@ type
     Mode: TParamMode;
     Typ: TType;              // nil: untyped var/const parameter (address only)
     Offset: Integer;
+    IsOpen: Boolean;         // open array parameter: address and highest index are passed
+    FromOpen: Boolean;       // the actual parameter is itself an open array parameter
+    ElemSize: Integer;
+    ActCount: Int64;         // number of elements of the actual array
   end;
 
   TCallExpr = class(TExpr)
@@ -364,6 +404,7 @@ type
     CallerLevel: Integer;
     TempAddr: TExpr;           // where a record/array/set result is copied to
     SelfExpr: TExpr;           // method calls: the address of the object (also argument 0)
+    ProcExpr: TExpr;           // call through a procedural value: evaluates to the routine's number
     VirtIndex: Integer;        // >= 0: pick the routine from the object's VMT
     SetVmtId: Integer;         // constructor called through a designator: store this type id in the VMT field
     VmtOff: Integer;
@@ -396,7 +437,15 @@ type
   TCompound = class(TStmt)
   public
     Items: array of TStmt;
+    LabelIds, LabelIdx: array of Integer;     // labels in this statement list and the statement each one names
     procedure Add(S: TStmt);
+    procedure AddLabel(Id: Integer);
+    function Exec(C: TRun): TSig; override;
+  end;
+
+  TGoto = class(TStmt)
+  public
+    LabelId: Integer;
     function Exec(C: TRun): TSig; override;
   end;
 
@@ -533,6 +582,75 @@ destructor TRoutine.Destroy;
 begin
   Params.Free;
   inherited Destroy;
+end;
+
+{ ---------------- open arrays ---------------- }
+
+constructor TTempStr.Create(ASrc, ATemp: TExpr; AType: TType);
+begin
+  inherited Create;
+  Src := ASrc;
+  Temp := ATemp;
+  Typ := AType;
+end;
+
+function TTempStr.EvalA(C: TRun): TAddr;
+var
+  S: ShortString;
+begin
+  Src.EvalS(C, S);
+  Result := Temp.EvalA(C);
+  C.Mem.PutStr(Result, 255, S);
+end;
+
+function TTempStr.IsLValue: Boolean;
+begin
+  Result := False;
+end;
+
+constructor TOpenIndexAddr.Create(ASlot, AIndex: TExpr; AElemSize: Integer; AType: TType);
+begin
+  inherited Create;
+  Slot := ASlot;
+  Index := AIndex;
+  ElemSize := AElemSize;
+  Typ := AType;
+end;
+
+function TOpenIndexAddr.EvalA(C: TRun): TAddr;
+var
+  S: TAddr;
+  I, High: Int64;
+begin
+  S := Slot.EvalA(C);
+  I := Index.EvalI(C);
+  High := C.Mem.GetInt(S + 4, 4, True);
+  if (I < 0) or (I > High) then raise EMKRuntime.CreateCode(201);
+  Result := TAddr(C.Mem.GetInt(S, 4, False)) + TAddr(I * ElemSize);
+end;
+
+constructor TOpenData.Create(ASlot: TExpr; AType: TType);
+begin
+  inherited Create;
+  Slot := ASlot;
+  Typ := AType;
+end;
+
+function TOpenData.EvalA(C: TRun): TAddr;
+begin
+  Result := TAddr(C.Mem.GetInt(Slot.EvalA(C), 4, False));
+end;
+
+constructor TOpenHigh.Create(ASlot: TExpr; AType: TType);
+begin
+  inherited Create;
+  Slot := ASlot;
+  Typ := AType;
+end;
+
+function TOpenHigh.EvalI(C: TRun): Int64;
+begin
+  Result := C.Mem.GetInt(Slot.EvalA(C) + 4, 4, True);
 end;
 
 { ---------------- TExpr ---------------- }
@@ -1304,14 +1422,23 @@ end;
 
 procedure TCallExpr.Invoke(C: TRun; out ResAddr: TAddr);
 var
-  NewFP, SavedSP, SavedFP, Link, SelfA: TAddr;
-  I, First, Id: Integer;
+  NewFP, SavedSP, SavedFP, Link, SelfA, DataA, SlotA: TAddr;
+  I, First, Id, NCopies: Integer;
   A: TArg;
   R: TRoutine;
+  High: Int64;
+  Copies: array of TAddr;
 begin
   R := Routine;
   First := 0;
   SelfA := 0;
+  NCopies := 0;
+  if ProcExpr <> nil then
+  begin
+    Id := Integer(ProcExpr.EvalI(C));
+    if (Id <= 0) or (Id > C.ProcTable.Count) then raise EMKRuntime.CreateCode(204);
+    R := TRoutine(C.ProcTable[Id - 1]);
+  end;
   if SelfExpr <> nil then
   begin
     SelfA := SelfExpr.EvalA(C);
@@ -1336,7 +1463,33 @@ begin
     for I := First to Args.Count - 1 do
     begin
       A := TArg(Args[I]);
-      if (A.Mode = pmVar) or (A.Typ = nil) then
+      if A.IsOpen then
+      begin
+        if A.FromOpen then
+        begin
+          SlotA := A.Expr.EvalA(C);
+          DataA := TAddr(C.Mem.GetInt(SlotA, 4, False));
+          High := C.Mem.GetInt(SlotA + 4, 4, True);
+        end
+        else
+        begin
+          DataA := A.Expr.EvalA(C);
+          High := A.ActCount - 1;
+        end;
+        if A.Mode = pmValue then
+        begin
+          { a value parameter gets a private copy, released when the call ends }
+          SlotA := C.Mem.Alloc(LongWord((High + 1) * A.ElemSize));
+          C.Mem.Copy(DataA, SlotA, LongWord((High + 1) * A.ElemSize));
+          DataA := SlotA;
+          SetLength(Copies, NCopies + 1);
+          Copies[NCopies] := SlotA;
+          Inc(NCopies);
+        end;
+        C.Mem.PutInt(NewFP + TAddr(A.Offset), 4, DataA);
+        C.Mem.PutInt(NewFP + TAddr(A.Offset) + 4, 4, High);
+      end
+      else if (A.Mode = pmVar) or (A.Typ = nil) then
         C.Mem.PutInt(NewFP + TAddr(A.Offset), 4, A.Expr.EvalA(C))
       else
         StoreValue(C, A.Expr, NewFP + TAddr(A.Offset), A.Typ);
@@ -1358,6 +1511,7 @@ begin
     Dec(C.Depth);
     C.FP := SavedFP;
     C.SP := SavedSP;
+    for I := 0 to NCopies - 1 do C.Mem.FreeBlock(Copies[I]);
   end;
   if IsCtor then
   begin
@@ -1406,6 +1560,7 @@ function TCallExpr.EvalA(C: TRun): TAddr;
 var
   A, T: TAddr;
 begin
+  if TempAddr = nil then raise Exception.Create('internal: the result of this call has no address');
   Invoke(C, A);
   T := TempAddr.EvalA(C);
   C.Mem.Copy(A, T, Typ.Size);
@@ -1437,16 +1592,47 @@ begin
   Items[High(Items)] := S;
 end;
 
+procedure TCompound.AddLabel(Id: Integer);
+begin
+  SetLength(LabelIds, Length(LabelIds) + 1);
+  SetLength(LabelIdx, Length(LabelIdx) + 1);
+  LabelIds[High(LabelIds)] := Id;
+  LabelIdx[High(LabelIdx)] := Length(Items);       // the next statement added is the one the label names
+end;
+
 function TCompound.Exec(C: TRun): TSig;
 var
-  I: Integer;
+  I, J: Integer;
 begin
-  for I := 0 to High(Items) do
+  I := 0;
+  while I < Length(Items) do
   begin
     Result := Items[I].Run(C);
-    if Result <> sgNone then Exit;
+    if Result <> sgNone then
+    begin
+      if (Result = sgGoto) and (Length(LabelIds) > 0) then
+      begin
+        for J := 0 to High(LabelIds) do
+          if LabelIds[J] = C.GotoLabel then
+          begin
+            I := LabelIdx[J];
+            C.Tick;                                  // a goto loop still honours limits and Break
+            Result := sgNone;
+            Break;
+          end;
+        if Result = sgNone then Continue;
+      end;
+      Exit;
+    end;
+    Inc(I);
   end;
   Result := sgNone;
+end;
+
+function TGoto.Exec(C: TRun): TSig;
+begin
+  C.GotoLabel := LabelId;
+  Result := sgGoto;
 end;
 
 constructor TAssign.Create(ADst, ASrc: TExpr);

@@ -65,6 +65,7 @@ type
     InputAddr, OutputAddr, LstAddr, DosErrorAddr: TAddr;
     ObjTypes: TList;             // object types by VMT id - 1
     UnitInits: TList;            // initialization statements of the units, in dependency order
+    ProcTable: TList;            // routines used as procedural values, by value - 1
     Name: string;
     constructor Create;
     destructor Destroy; override;
@@ -72,6 +73,26 @@ type
   end;
 
   TExprArray = array of TExpr;
+
+  TLabelFrame = class                 // the labels declared in one statement list
+  public
+    Ids: array of Integer;
+  end;
+
+  TGotoRec = class                    // a goto waiting for its label to be checked
+  public
+    Node: TGoto;
+    Name: string;
+    Tok: TToken;
+    Frames: array of TLabelFrame;     // the statement lists enclosing the goto
+  end;
+
+  TLabelState = record                // label bookkeeping of the routine (or unit, or program) being compiled
+    Map: TStringList;
+    Stack: TList;
+    Gotos: TObjectList;
+    Declared: TList;
+  end;
 
   TCompiler = class
   private
@@ -95,6 +116,8 @@ type
     FInInterface: Boolean;
     FMethods, FForwards: TList;
     FDateTimeType, FSearchRecType: TType;
+    FLabels: TLabelState;
+    FFrames: TObjectList;
     { tokens }
     procedure Err(const Msg: string);
     procedure ErrAt(const Msg: string; const T: TToken);
@@ -210,6 +233,21 @@ type
     procedure CheckMethodsDefined;
     function ParseNewDispose(Id: TBI; const T: TToken): TStmt;
     function ParseNewFunc(const T: TToken): TExpr;
+    { procedural types, goto }
+    function ParseProcType: TType;
+    function ProcRef(R: TRoutine; const T: TToken): TExpr;
+    function ParseExprFor(T: TType): TExpr;
+    function BuildProcCall(ProcVal: TExpr): TExpr;
+    function LabelKey(const T: TToken): string;
+    function LabelId(const Key: string): Integer;
+    procedure BeginLabelScope(out Saved: TLabelState);
+    procedure ResolveGotos;
+    procedure EndLabelScope(const Saved: TLabelState);
+    function PushLabelFrame: TLabelFrame;
+    procedure PopLabelFrame;
+    function IsLabelAhead: Boolean;
+    procedure ParseLabels(C: TCompound; Frame: TLabelFrame);
+    function ParseGoto(const T: TToken): TStmt;
   public
     constructor Create(AInclude: TIncludeFunc; AUnitSource: TUnitSourceFunc; ADefines: TStrings; AMaxGlobals: LongWord);
     destructor Destroy; override;

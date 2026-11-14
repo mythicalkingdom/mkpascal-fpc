@@ -96,6 +96,26 @@ lists the harness and matches wildcards (`TRun.FindFirstFile`), `Stat` supplies 
 dates gives size only), `GetFTime`/`SetFTime` use the open file (`pendingTime` is re-applied after each flush),
 `GetDate`/`GetTime` read `TRun.Clock`. Times are DOS packed local time.
 
+## Procedural types, goto, open arrays
+
+- **Procedural types.** `type TFn = function(x: integer): integer;` is a `tyProc` type (`Params` with frame offsets, `Ret`),
+  4 bytes holding a routine's number in `TProgramImage.ProcTable` (= `TRun.ProcTable`; 0 is nil). `@Foo`, or a bare
+  routine name where a procedural value is expected (`ParseExprFor`: assignments, arguments, typed constants), gives
+  `ProcRef`: a `TConstInt` of the number. Only level-1 routines can be taken (nested, methods and standard routines are
+  compile errors). A call through a value is a `TCallExpr` with `ProcExpr` (`BuildProcCall`, from `f(x)`, `f;`, `rec.cb`,
+  `ops[i](2)`); `Invoke` picks the routine from the table, so frame size, static link and result offset come from the
+  routine actually called. Compatibility is structural (`ProcCompat`). Calling nil is runtime error 204.
+- **goto.** `TGoto` returns `sgGoto` with `TRun.GotoLabel`; loops, `if`, `case` and `with` pass it up and a `TCompound` that
+  declares the label (`LabelIds/LabelIdx`, filled by `ParseLabels` for `label:` at the start of statements in a list)
+  restarts at it (ticking the step counter). Labels are checked at compile time (`TLabelState` per routine/unit/program,
+  `TLabelFrame` per statement list, `ResolveGotos`): a label must be in the statement list of the goto or an enclosing one
+  of the same routine, so jumping into a statement or out of a routine is a compile error.
+- **Open arrays.** `array of T` parameters (value, `var`, `const`) are `tyOpenArray`: the parameter slot holds the address
+  and the highest index (8 bytes). `a[i]` is `TOpenIndexAddr` (range checked, error 201), `High(a)` is `TOpenHigh`, `Low(a)`
+  is 0, and `LValueOf` turns an open array into `TOpenData` (its data address) for `Move`/`FillChar`/`BlockRead`. The call
+  builds the slot in `TCallExpr.Invoke` (`TArg.IsOpen`): an actual array passes its address and bounds, an open array
+  parameter passes its slot on (`FromOpen`), and a *value* parameter gets a private heap copy freed when the call ends.
+
 ## Tests
 
 - `tests/cases/NAME.pas` + `NAME.out` (+ `.in` lines for ReadLn, `.keys` for ReadKey), run by `bin/runtests`;
@@ -108,11 +128,10 @@ dates gives size only), `GetFTime`/`SetFTime` use the open file (`pendingTime` i
 
 ## Status
 
-Done: objects, units and the Dos routines (see above); lexer with includes and conditional compilation; types (integers, Real family, Boolean, Char, enums,
+Done: procedural types, goto, open arrays, objects, units and the Dos routines (see above); lexer with includes and conditional compilation; types (integers, Real family, Boolean, Char, enums,
 subranges, strings, arrays, records with variants, sets, pointers, files); constants and typed constants;
 procedures/functions (nested, forward, value/var/const/untyped parameters, recursion); all statements except
 `goto`; System/Crt/file builtins; console and file I/O with `{$I-}`; heap; session API and limits.
 
-Not yet (port from `../mkpascal`, in this order): procedural types, `goto`, open array parameters, performance work
-(specialised nodes for common patterns). Verified against real code: the MKSTRING unit (35 routines, conditional
+Not yet: performance work (specialised nodes for common patterns), `Strings`/`Objects` units, non-local `goto`. Verified against real code: the MKSTRING unit (35 routines, conditional
 compilation, includes, string idioms) gives the same output as the JavaScript interpreter.

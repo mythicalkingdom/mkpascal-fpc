@@ -95,6 +95,11 @@ begin
     NeedArgs(Args, 1, 1, T);
     A := Args[0];
     Ty := A.Typ;
+    if (Id <> biSizeOf) and (HostOf(Ty).Kind = tyOpenArray) then
+    begin
+      if Id = biLow then Exit(TConstInt.Create(0, FImage.Types.TInteger));
+      Exit(TOpenHigh.Create(A, FImage.Types.TLongInt));
+    end;
     case Id of
       biSizeOf: begin N := Ty.Size; Exit(TConstInt.Create(N, FImage.Types.IntTypeFor(N, N))); end;
       biHigh, biLow:
@@ -712,17 +717,21 @@ function TCompiler.ParseCompound: TStmt;
 var
   C: TCompound;
   S: TStmt;
+  Frame: TLabelFrame;
 begin
   ExpectKw('begin');
   C := TCompound.Create;
   C.Line := Tok.Line;
+  Frame := PushLabelFrame;
   while True do
   begin
-    S := ParseStatement;
+    ParseLabels(C, Frame);
+    S := ParseStatement();
     if not (S is TNop) then C.Add(S);
     if AcceptSym(';') then Continue;
     Break;
   end;
+  PopLabelFrame;
   ExpectKw('end');
   Result := C;
 end;
@@ -733,12 +742,15 @@ var
   S: TStmt;
   I: Integer;
   AtStop: Boolean;
+  Frame: TLabelFrame;
 begin
   C := TCompound.Create;
   C.Line := Tok.Line;
+  Frame := PushLabelFrame;
   while True do
   begin
-    S := ParseStatement;
+    ParseLabels(C, Frame);
+    S := ParseStatement();
     if not (S is TNop) then C.Add(S);
     if AcceptSym(';') then Continue;
     AtStop := Tok.Kind = tkEOF;
@@ -747,6 +759,7 @@ begin
     if AtStop then Break;
     Err('''' + Stops[0] + ''' expected but ' + TokDesc + ' found');
   end;
+  PopLabelFrame;
   Result := C;
 end;
 
@@ -781,6 +794,7 @@ var
 begin
   T := Tok;
   Result := nil;
+  if IsLabelAhead then Err('Labels are only allowed in statement lists');
   if (Tok.Kind = tkKeyword) then
   begin
     if IsKw('begin') then Exit(ParseCompound);
@@ -925,7 +939,7 @@ begin
       FScope := SavedScope;
       Exit(Comp);
     end;
-    if IsKw('goto') then Err('goto is not implemented yet');
+    if IsKw('goto') then Exit(ParseGoto(T));
     if IsKw('inherited') then
     begin
       E := ParseInherited(False);
@@ -983,10 +997,18 @@ begin
     Next;
     if not Dst.IsLValue then ErrAt('Variable expected', T);
     if HostOf(Dst.Typ).Kind = tyFile then Err('Files cannot be assigned');
-    Src := Coerce(ParseExpr, Dst.Typ, ' in assignment');
+    Src := Coerce(ParseExprFor(Dst.Typ), Dst.Typ, ' in assignment');
     A := TAssign.Create(Dst, Src);
     A.Line := T.Line;
     Exit(A);
+  end;
+  { a call through a procedural value without parameters: f; or rec.cb; }
+  if Dst.IsLValue and (HostOf(Dst.Typ).Kind = tyProc) then
+  begin
+    CS := TCallStmt.Create;
+    CS.Call := TCallExpr(BuildProcCall(Dst));
+    CS.Line := T.Line;
+    Exit(CS);
   end;
   { a call of a function whose result is ignored, or a typecast used as a statement }
   if Dst is TCallExpr then
@@ -1006,6 +1028,7 @@ var
   Main: TStmt;
   Comp: TCompound;
   I: Integer;
+  SavedLabels: TLabelState;
 begin
   FImage.Name := '';
   if AcceptKw('program') then
@@ -1024,7 +1047,10 @@ begin
   ParseUses;
   PushScope;
   ParseDecls;
+  BeginLabelScope(SavedLabels);
   Main := ParseCompound;
+  ResolveGotos;
+  EndLabelScope(SavedLabels);
   ExpectSym('.');
   if Tok.Kind <> tkEOF then Err('Unexpected text after the final ''end.''');
   CheckMethodsDefined;
@@ -1048,6 +1074,7 @@ begin
   FUnits.OwnsObjects := True;
   FMethods := TList.Create;
   FForwards := TList.Create;
+  FFrames := TObjectList.Create(True);
 end;
 
 destructor TCompiler.Destroy;
@@ -1056,6 +1083,7 @@ begin
   FUnits.Free;
   FMethods.Free;
   FForwards.Free;
+  FFrames.Free;
   inherited Destroy;
 end;
 

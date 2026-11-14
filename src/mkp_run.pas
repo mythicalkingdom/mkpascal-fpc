@@ -72,6 +72,8 @@ type
     OpenFiles: Integer;
     StdIn, StdOut, StdLst: TPFile;      // handles 1, 2 and 3
     ObjTypes: TList;                    // object types by VMT id - 1 (set by the program image)
+    ProcTable: TList;                   // routines whose address was taken, by procedural value - 1
+    GotoLabel: Integer;                 // the label a goto is looking for
     Clock: function: TDateTime;         // time of day for GetDate/GetTime (default: Now)
     DosErrorAddr: TAddr;                // address of the DosError variable (0 if none)
     FSearches: TObjectList;             // FindFirst/FindNext state

@@ -1,0 +1,1 @@
+unit Cb; interface type TCb = procedure(n: integer); procedure Each(n: integer; cb: TCb); implementation procedure Each(n: integer; cb: TCb); var i: integer; begin for i := 1 to n do cb(i) end; end.

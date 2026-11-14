@@ -165,6 +165,7 @@ var
   MStart, FStart, I: Integer;
   S: TSymbol;
   NT: TToken;
+  SavedLabels: TLabelState;
 begin
   MStart := FMethods.Count;
   FStart := FForwards.Count;
@@ -197,6 +198,7 @@ begin
   FScope := ImplScope;
   ParseDecls;
   Init := nil;
+  BeginLabelScope(SavedLabels);
   if AcceptKw('begin') then
     Init := ParseStmtList(['end'])
   else if IsId('initialization') then
@@ -204,6 +206,8 @@ begin
     Next;
     Init := ParseStmtList(['end']);
   end;
+  ResolveGotos;
+  EndLabelScope(SavedLabels);
   ExpectKw('end');
   ExpectSym('.');
   for I := FStart to FForwards.Count - 1 do
@@ -406,6 +410,7 @@ var
   P: TParamDesc;
   A: TArg;
   E, L: TExpr;
+  AT: TType;
 begin
   R := Call.Routine;
   if R.Params.Count > First then
@@ -424,7 +429,22 @@ begin
       A.Mode := P.Mode;
       A.Typ := P.Typ;
       A.Offset := P.Offset;
-      E := ParseExpr;
+      if (P.Typ <> nil) and (P.Typ.Kind = tyOpenArray) then
+      begin
+        E := ParseExpr;
+        AT := HostOf(E.Typ);
+        if not (AT.Kind in [tyArray, tyOpenArray]) then Err('Array expected for the open array parameter ''' + P.Name + '''');
+        if not SameType(P.Typ.Elem, AT.Elem) then Err('The array''s element type does not match the parameter ''' + P.Name + '''');
+        if (P.Mode <> pmValue) and not E.IsLValue then Err('Variable expected');
+        A.IsOpen := True;
+        A.FromOpen := AT.Kind = tyOpenArray;
+        A.ElemSize := P.Typ.Elem.Size;
+        if AT.Kind = tyArray then A.ActCount := AT.Hi - AT.Lo + 1;
+        A.Expr := E;
+        Call.Args.Add(A);
+        Continue;
+      end;
+      if (P.Mode = pmVar) or (P.Typ = nil) then E := ParseExpr else E := ParseExprFor(P.Typ);
       if (P.Mode = pmVar) or (P.Typ = nil) then
       begin
         if (P.Typ = nil) and (P.Mode = pmConst) and not E.IsLValue and not IsLoadNode(E) then
@@ -591,4 +611,234 @@ begin
   B := MakeFn(biNew, [Slot, Call], E.Typ);
   B.Aux := Obj.Size;
   Result := B;
+end;
+
+{ ===================== procedural types ===================== }
+
+function TCompiler.ParseProcType: TType;
+var
+  IsFunc: Boolean;
+  Tmp: TRoutine;
+  Off: Integer;
+  PT: TType;
+begin
+  IsFunc := IsKw('function');
+  Next;
+  PT := FImage.Types.NewType(tyProc);
+  PT.Size := 4;
+  Tmp := TRoutine.Create;
+  try
+    Off := 8;
+    ParseParams(Tmp, Off);
+    while Tmp.Params.Count > 0 do PT.Params.Add(Tmp.Params.Extract(Tmp.Params[0]));
+  finally
+    Tmp.Free;
+  end;
+  if IsFunc then
+  begin
+    ExpectSym(':');
+    PT.Ret := ParseType();
+  end;
+  Result := PT;
+end;
+
+{ the value of a routine used as a procedural value: its number in the program's table of routines }
+function TCompiler.ProcRef(R: TRoutine; const T: TToken): TExpr;
+var
+  PT: TType;
+  I: Integer;
+  P, Q: TParamDesc;
+begin
+  if R.Owner <> nil then ErrAt('Addresses of methods are not supported', T);
+  if R.Level <> 1 then ErrAt('Cannot take the address of the nested routine ''' + R.Name + '''', T);
+  if R.ProcId = 0 then
+  begin
+    FImage.ProcTable.Add(R);
+    R.ProcId := FImage.ProcTable.Count;
+  end;
+  if R.ProcType = nil then
+  begin
+    PT := FImage.Types.NewType(tyProc);
+    PT.Size := 4;
+    PT.Ret := R.Ret;
+    for I := 0 to R.Params.Count - 1 do
+    begin
+      P := TParamDesc(R.Params[I]);
+      Q := TParamDesc.Create;
+      Q.Name := P.Name;
+      Q.Typ := P.Typ;
+      Q.Mode := P.Mode;
+      Q.Offset := P.Offset;
+      PT.Params.Add(Q);
+    end;
+    R.ProcType := PT;
+  end;
+  Result := TConstInt.Create(R.ProcId, R.ProcType);
+end;
+
+{ an expression whose value goes into something of type T: a bare routine name is its address when T is procedural }
+function TCompiler.ParseExprFor(T: TType): TExpr;
+var
+  Sym: TSymbol;
+  Skip, K: Integer;
+  NT, FirstTok: TToken;
+begin
+  if (T <> nil) and (HostOf(T).Kind = tyProc) and (Tok.Kind = tkIdent) then
+  begin
+    FirstTok := Tok;
+    Sym := ResolveAhead(Skip);
+    if (Sym <> nil) and (Sym.Kind = skRoutine) then
+    begin
+      NT := PeekTok(Skip + 1);
+      if not ((NT.Kind = tkSym) and ((NT.Key = '(') or (NT.Key = '.'))) then
+      begin
+        for K := 0 to Skip do Next;
+        Exit(ProcRef(Sym.Routine, FirstTok));
+      end;
+    end;
+  end;
+  Result := ParseExpr;
+end;
+
+{ a call through a procedural value }
+function TCompiler.BuildProcCall(ProcVal: TExpr): TExpr;
+var
+  PT: TType;
+  Syn: TRoutine;
+  Call: TCallExpr;
+  I: Integer;
+  P, Q: TParamDesc;
+begin
+  PT := HostOf(ProcVal.Typ);
+  Syn := TRoutine.Create;                       // describes the signature for argument checking
+  FImage.Routines.Add(Syn);
+  Syn.Name := 'procedural value';
+  Syn.Level := 1;
+  Syn.Ret := PT.Ret;
+  for I := 0 to PT.Params.Count - 1 do
+  begin
+    P := TParamDesc(PT.Params[I]);
+    Q := TParamDesc.Create;
+    Q.Name := P.Name;
+    Q.Typ := P.Typ;
+    Q.Mode := P.Mode;
+    Q.Offset := P.Offset;
+    Syn.Params.Add(Q);
+  end;
+  Call := TCallExpr.Create(Syn, FLevel);
+  Call.Line := Tok.Line;
+  Call.ProcExpr := RValue(ProcVal);
+  ParseCallArgs(Call, 0);
+  if PT.Ret = nil then Call.Typ := FImage.Types.TVoid
+  else if PT.Ret.ExprClass = ecMem then Call.TempAddr := TempVar(PT.Ret);
+  Result := Call;
+end;
+
+{ ===================== goto ===================== }
+
+function TCompiler.LabelKey(const T: TToken): string;
+begin
+  if T.Kind = tkInt then Result := IntToStr(T.IntVal) else Result := T.Key;
+end;
+
+function TCompiler.LabelId(const Key: string): Integer;
+begin
+  Result := FLabels.Map.IndexOf(Key);
+  if Result < 0 then Result := FLabels.Map.Add(Key);
+end;
+
+procedure TCompiler.BeginLabelScope(out Saved: TLabelState);
+begin
+  Saved := FLabels;
+  FLabels.Map := TStringList.Create;
+  FLabels.Map.CaseSensitive := False;
+  FLabels.Stack := TList.Create;
+  FLabels.Gotos := TObjectList.Create(True);
+  FLabels.Declared := TList.Create;
+end;
+
+procedure TCompiler.ResolveGotos;
+var
+  I, J, K: Integer;
+  G: TGotoRec;
+  Found: Boolean;
+begin
+  for I := 0 to FLabels.Gotos.Count - 1 do
+  begin
+    G := TGotoRec(FLabels.Gotos[I]);
+    Found := False;
+    for J := 0 to High(G.Frames) do
+      for K := 0 to High(G.Frames[J].Ids) do
+        if G.Frames[J].Ids[K] = G.Node.LabelId then Found := True;
+    if not Found then
+      ErrAt('Label ''' + G.Name + ''' is not in an enclosing statement list (goto cannot jump into a statement or out of a routine)', G.Tok);
+  end;
+end;
+
+procedure TCompiler.EndLabelScope(const Saved: TLabelState);
+begin
+  FLabels.Map.Free;
+  FLabels.Stack.Free;
+  FLabels.Gotos.Free;
+  FLabels.Declared.Free;
+  FLabels := Saved;
+end;
+
+function TCompiler.PushLabelFrame: TLabelFrame;
+begin
+  Result := TLabelFrame.Create;
+  FFrames.Add(Result);
+  FLabels.Stack.Add(Result);
+end;
+
+procedure TCompiler.PopLabelFrame;
+begin
+  FLabels.Stack.Delete(FLabels.Stack.Count - 1);
+end;
+
+function TCompiler.IsLabelAhead: Boolean;
+begin
+  Result := ((Tok.Kind = tkInt) or (Tok.Kind = tkIdent)) and (PeekTok(1).Kind = tkSym) and (PeekTok(1).Key = ':');
+end;
+
+{ label: label: ... at the start of a statement in a list }
+procedure TCompiler.ParseLabels(C: TCompound; Frame: TLabelFrame);
+var
+  Id: Integer;
+begin
+  while IsLabelAhead do
+  begin
+    Id := LabelId(LabelKey(Tok));
+    if FLabels.Declared.IndexOf(Pointer(PtrInt(Id))) >= 0 then Err('Duplicate label ''' + Tok.Text + '''');
+    FLabels.Declared.Add(Pointer(PtrInt(Id)));
+    SetLength(Frame.Ids, Length(Frame.Ids) + 1);
+    Frame.Ids[High(Frame.Ids)] := Id;
+    C.AddLabel(Id);
+    Next;
+    Next;
+  end;
+end;
+
+function TCompiler.ParseGoto(const T: TToken): TStmt;
+var
+  G: TGoto;
+  Rec: TGotoRec;
+  NT: TToken;
+  I: Integer;
+begin
+  Next;
+  if not ((Tok.Kind = tkInt) or (Tok.Kind = tkIdent)) then Err('Label expected but ' + TokDesc + ' found');
+  NT := Tok;
+  G := TGoto.Create;
+  G.Line := T.Line;
+  G.LabelId := LabelId(LabelKey(NT));
+  Rec := TGotoRec.Create;
+  Rec.Node := G;
+  Rec.Name := NT.Text;
+  Rec.Tok := NT;
+  SetLength(Rec.Frames, FLabels.Stack.Count);
+  for I := 0 to FLabels.Stack.Count - 1 do Rec.Frames[I] := TLabelFrame(FLabels.Stack[I]);
+  FLabels.Gotos.Add(Rec);
+  Next;
+  Result := G;
 end;
