@@ -6,7 +6,7 @@ unit mkp_compiler;
 interface
 
 uses
-  SysUtils, Classes, contnrs, StrUtils, mkp_defs, mkp_lexer, mkp_types, mkp_mem, mkp_run, mkp_nodes, mkp_builtins;
+  SysUtils, Classes, contnrs, StrUtils, mkp_defs, mkp_lexer, mkp_types, mkp_mem, mkp_run, mkp_nodes, mkp_builtins, mkp_stdunits;
 
 type
   TSymKind = (skVar, skConst, skType, skRoutine, skBuiltin, skField, skMethod);
@@ -171,6 +171,8 @@ type
     procedure ParseRoutine;
     { expressions }
     function IsCharLit(E: TExpr): Boolean;
+    function IsPCharT(T: TType): Boolean;
+    function PCharArg(E: TExpr): TExpr;
     function RValue(E: TExpr): TExpr;
     function LValueOf(E: TExpr): TExpr;
     function IsIntT(T: TType): Boolean;

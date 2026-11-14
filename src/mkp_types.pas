@@ -74,7 +74,7 @@ type
   public
     // predeclared
     TInteger, TShortInt, TByte, TWord, TLongInt, TBoolean, TChar, TString, TText, TPointer, TNil, TVoid,
-    TReal, TSingle, TDouble, TExtended, TComp, TUntyped: TType;
+    TReal, TSingle, TDouble, TExtended, TComp, TUntyped, TPChar: TType;
     constructor Create;
     destructor Destroy; override;
     function NewType(AKind: TTypeKind): TType;
@@ -188,6 +188,8 @@ begin
   TText.Name := 'Text';
   TPointer := PtrType(nil);
   TPointer.Name := 'Pointer';
+  TPChar := PtrType(TChar);
+  TPChar.Name := 'PChar';
   TNil := NewType(tyNil);
   TNil.Size := 4;
   TVoid := NewType(tyVoid);

@@ -79,6 +79,37 @@ begin
   else Result := wI32;
 end;
 
+function TCompiler.IsPCharT(T: TType): Boolean;
+var
+  H: TType;
+begin
+  H := HostOf(T);
+  Result := (H.Kind = tyPtr) and (H.Base <> nil) and (HostOf(H.Base).Kind = tyChar);
+end;
+
+{ string constants and zero based character arrays become PChar values }
+function TCompiler.PCharArg(E: TExpr): TExpr;
+var
+  A: TAddr;
+  H: TType;
+  Buf: RawByteString;
+begin
+  if (E is TConstStr) then
+  begin
+    Buf := RawByteString(string(TConstStr(E).Value)) + #0;
+    A := AllocGlobal(Length(Buf));
+    AddInit(A, Buf);
+    Exit(TConstInt.Create(A, FImage.Types.TPChar));
+  end;
+  H := HostOf(E.Typ);
+  if E.IsLValue and (H.Kind = tyArray) and (HostOf(H.Elem).Kind = tyChar) and (H.Lo = 0) then
+    Exit(TAddrOf.Create(E, FImage.Types.TPChar));
+  Result := RValue(E);
+  if not IsPCharT(Result.Typ) and not (HostOf(Result.Typ).Kind in [tyNil]) and
+     not ((HostOf(Result.Typ).Kind = tyPtr) and (HostOf(Result.Typ).Base = nil)) then
+    Err('PChar, a string constant or a zero based character array expected');
+end;
+
 { convert E so that it can be stored in a variable of type Dst (or passed to a parameter of that type) }
 function TCompiler.Coerce(E: TExpr; Dst: TType; const What: string): TExpr;
 var
@@ -86,6 +117,11 @@ var
   V: Int64;
   Mismatch: Boolean;
 begin
+  if IsPCharT(Dst) and ((E is TConstStr) or (E.IsLValue and (HostOf(E.Typ).Kind = tyArray))) then
+    Exit(PCharArg(E));
+  if (HostOf(Dst).Kind = tyString) and E.IsLValue and (HostOf(E.Typ).Kind = tyArray) and
+     (HostOf(HostOf(E.Typ).Elem).Kind = tyChar) and (HostOf(E.Typ).Lo = 0) then
+    Exit(TPCharToStr.Create(PCharArg(E), FImage.Types.TString));
   E := RValue(E);
   D := HostOf(Dst);
   S := HostOf(E.Typ);
@@ -99,6 +135,7 @@ begin
     tyString:
       begin
         if S.Kind = tyChar then Result := TCharToStr.Create(E, FImage.Types.TString)
+        else if IsPCharT(S) then Result := TPCharToStr.Create(E, FImage.Types.TString)
         else Mismatch := S.Kind <> tyString;
       end;
     tyInt:
@@ -182,6 +219,11 @@ begin
           Idx := Coerce(Idx, FImage.Types.TInteger, ' in string index');
           if not Result.IsLValue then Result := TTempStr.Create(Result, TempVar(FImage.Types.TString), FImage.Types.TString);
           Result := TStrElemAddr.Create(Result, Idx, T.MaxLen, FImage.Types.TChar);
+        end
+        else if IsPCharT(T) then
+        begin
+          if (Idx.Typ.ExprClass <> ecInt) or (HostOf(Idx.Typ).Kind <> tyInt) then Err('Integer expression expected in index');
+          Result := TPtrIndexAddr.Create(RValue(Result), Idx, FImage.Types.TChar);
         end
         else if T.Kind = tyOpenArray then
         begin
@@ -532,6 +574,8 @@ begin
   { a one character string constant next to a Char is a Char }
   if IsCharLit(L) and (HostOf(R.Typ).Kind = tyChar) then L := Coerce(L, FImage.Types.TChar, '');
   if IsCharLit(R) and (HostOf(L.Typ).Kind = tyChar) then R := Coerce(R, FImage.Types.TChar, '');
+  if IsPCharT(L.Typ) and R.IsLValue and (HostOf(R.Typ).Kind = tyArray) then R := PCharArg(R);
+  if IsPCharT(R.Typ) and L.IsLValue and (HostOf(L.Typ).Kind = tyArray) then L := PCharArg(L);
   LH := HostOf(L.Typ);
   RH := HostOf(R.Typ);
   if (LH.Kind = tyVoid) or (RH.Kind = tyVoid) then Err('Expression has no value');
@@ -603,6 +647,17 @@ begin
       Result := TRealBin.Create(Op[1], ToReal(L), ToReal(R), AT);
       if L.IsConst and R.IsConst then Result := TryFold(Result);
       Exit;
+    end;
+    if IsPCharT(LH) and (Op <> '*') then
+    begin
+      if (RH.Kind = tyInt) then
+      begin
+        if Op = '+' then AOp := aoAdd else AOp := aoSub;
+        Exit(TIntBin.Create(AOp, L, R, wNone, LH));
+      end;
+      if (Op = '-') and IsPCharT(RH) then
+        Exit(TIntBin.Create(aoSub, L, R, wI32, FImage.Types.TLongInt));
+      Bad;
     end;
     if (LH.Kind = tyInt) and (RH.Kind = tyInt) then
     begin

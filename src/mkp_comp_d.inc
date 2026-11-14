@@ -127,7 +127,7 @@ begin
     if not U.IntfDone then ErrAt('Circular unit reference: ' + AName, NT);
     Exit(U);
   end;
-  if not Assigned(FUnitSource) or not FUnitSource(AName, Text) then ErrAt('Unit file not found: ' + AName, NT);
+  if not (Assigned(FUnitSource) and FUnitSource(AName, Text)) and not StdUnitSource(AName, Text) then ErrAt('Unit file not found: ' + AName, NT);
   U := TUnitInfo.Create;
   U.Name := AName;
   FUnits.AddObject(AName, U);
@@ -400,6 +400,28 @@ begin
     Inc(Off, 2);
   end;
   Obj.Size := Off;
+  { methods declared above may take or return this very type by value: their frames depend on the final size }
+  for K := 0 to Obj.Methods.Count - 1 do
+  begin
+    M := TRoutine(Obj.Methods.Objects[K]);
+    if (M = nil) or (M.Owner <> Obj) then Continue;
+    Off := 8;
+    for I := 0 to M.Params.Count - 1 do
+    begin
+      TParamDesc(M.Params[I]).Offset := Off;
+      if (TParamDesc(M.Params[I]).Typ <> nil) and (TParamDesc(M.Params[I]).Typ.Kind = tyOpenArray) then Inc(Off, 8)
+      else if (TParamDesc(M.Params[I]).Mode = pmVar) or (TParamDesc(M.Params[I]).Typ = nil) then Inc(Off, 4)
+      else Inc(Off, TParamDesc(M.Params[I]).Typ.Size);
+      if Off and 1 <> 0 then Inc(Off);
+    end;
+    if M.Ret <> nil then
+    begin
+      M.ResultOffset := Off;
+      Inc(Off, M.Ret.Size);
+      if Off and 1 <> 0 then Inc(Off);
+    end;
+    M.FrameSize := Off;
+  end;
   Result := Obj;
 end;
 
@@ -562,7 +584,8 @@ var
   MT: TToken;
 begin
   ExpectSym('(');
-  A := LValueOf(ParseExpr);
+  A := ParseExpr;
+  if Id = biNew then A := LValueOf(A) else A := RValue(A);
   H := HostOf(A.Typ);
   if H.Kind <> tyPtr then ErrAt('Pointer variable expected', T);
   if (Id = biNew) and (H.Base = nil) then ErrAt('Typed pointer variable expected', T);

@@ -62,3 +62,12 @@ can set, `PackTime/UnpackTime`, `FSplit`, `FExpand`, `SearchRec`, `DateTime`, `D
 local **`goto`** and **open array parameters** (`array of T`, value/`var`/`const`, `High`) are in too. Everything the
 JavaScript version runs now runs here, including its `invent` example (units, objects, `Fail`, a sort callback, Crt,
 typed files). See `CLAUDE.md` for the design notes.
+
+**`Strings` unit**: `PChar` (string literals and zero based `array of Char` convert to it, `p[i]`, `p+n`, `p-q`, `Inc/Dec`,
+`Write(p)`, assignment to a string) and `StrLen StrEnd StrMove StrCopy StrECopy StrLCopy StrPCopy StrCat StrLCat StrComp
+StrIComp StrLComp StrLIComp StrScan StrRScan StrPos StrUpper StrLower StrPas StrNew StrDispose`, callable as procedures too.
+**`Objects` unit** (Pascal source in `units/OBJECTS.PAS`, built into the binary; a unit of the same name from the host takes
+precedence): `TObject`, `TRect`/`TPoint`, `TStream`, `TMemoryStream`, `TDosStream`/`TBufStream` (the file is held in memory
+and written back on `Flush`/`Done`), `TCollection`, `TSortedCollection`, `TStringCollection`, `TStrCollection`, `NewStr`,
+`DisposeStr`, `Abstract`. Not included: stream registration (`Get`/`Put`), `TResourceFile`, `TStringList`. `ForEach`,
+`FirstThat`, `LastThat` take top level routines (`@Name`). `make units` regenerates `src/mkp_stdunits.pas` after editing.

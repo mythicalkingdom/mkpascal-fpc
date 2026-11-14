@@ -304,6 +304,51 @@ begin
         NeedArgs(Args, 1, 1, T);
         B := MakeFn(Id, [StrArg(Args[0])], FImage.Types.TString);
       end;
+    biStrLen, biStrComp, biStrIComp, biStrLComp, biStrLIComp:
+      begin
+        if Id = biStrLen then NeedArgs(Args, 1, 1, T)
+        else if Id in [biStrComp, biStrIComp] then NeedArgs(Args, 2, 2, T) else NeedArgs(Args, 3, 3, T);
+        B := MakeFn(Id, [PCharArg(Args[0])], FImage.Types.TWord);
+        if Id <> biStrLen then
+        begin
+          SetLength(B.Args, Length(Args));
+          B.Args[1] := PCharArg(Args[1]);
+          if Length(Args) = 3 then B.Args[2] := IntArg(Args[2]);
+          B.Typ := FImage.Types.TInteger;
+        end;
+      end;
+    biStrEnd, biStrUpper, biStrLower, biStrNew:
+      begin
+        NeedArgs(Args, 1, 1, T);
+        B := MakeFn(Id, [PCharArg(Args[0])], FImage.Types.TPChar);
+      end;
+    biStrCopy, biStrECopy, biStrCat, biStrPos:
+      begin
+        NeedArgs(Args, 2, 2, T);
+        B := MakeFn(Id, [PCharArg(Args[0]), PCharArg(Args[1])], FImage.Types.TPChar);
+      end;
+    biStrMove, biStrLCopy, biStrLCat:
+      begin
+        NeedArgs(Args, 3, 3, T);
+        B := MakeFn(Id, [PCharArg(Args[0]), PCharArg(Args[1]), IntArg(Args[2])], FImage.Types.TPChar);
+      end;
+    biStrPCopy:
+      begin
+        NeedArgs(Args, 2, 2, T);
+        B := MakeFn(Id, [PCharArg(Args[0]), StrArg(Args[1])], FImage.Types.TPChar);
+      end;
+    biStrScan, biStrRScan:
+      begin
+        NeedArgs(Args, 2, 2, T);
+        A := RValue(Args[1]);
+        if IsCharLit(A) then A := Coerce(A, FImage.Types.TChar, '');
+        B := MakeFn(Id, [PCharArg(Args[0]), A], FImage.Types.TPChar);
+      end;
+    biStrPas:
+      begin
+        NeedArgs(Args, 1, 1, T);
+        B := MakeFn(Id, [PCharArg(Args[0])], FImage.Types.TString);
+      end;
   else
     ErrAt('Unsupported function', T);
     B := nil;
@@ -312,7 +357,7 @@ begin
   { fold calls on constants (Chr(27), Length('abc'), Ord('A') ...) }
   if not (Id in [biRandom, biEof, biEoln, biSeekEof, biSeekEoln, biFilePos, biFileSize, biIOResult,
                  biParamCount, biParamStr, biReadKey, biKeyPressed, biWhereX, biWhereY, biMemAvail, biMaxAvail,
-                 biTypeOf, biDosVersion, biGetEnv, biFExpand]) then
+                 biTypeOf, biDosVersion, biGetEnv, biFExpand, biStrLen..biStrNew]) then
   begin
     Folds := True;
     for I := 0 to High(B.Args) do
@@ -386,6 +431,8 @@ begin
         Continue;
       end;
       if (FileType <> nil) and not FileType.IsText then Err('Write cannot be used with an untyped file');
+      if E.IsLValue and (HostOf(E.Typ).Kind = tyArray) and (HostOf(HostOf(E.Typ).Elem).Kind = tyChar) and
+         (HostOf(E.Typ).Lo = 0) then E := PCharArg(E);
       It.Expr := E;
       It.Width := Wd;
       It.Dec := Dc;
@@ -398,6 +445,7 @@ begin
         tyChar: It.Kind := wkChar;
         tyString: It.Kind := wkStr;
         tyEnum: It.Kind := wkEnum;
+        tyPtr: if IsPCharT(H) then It.Kind := wkPChar else Err('Cannot write values of type ' + TypeName(E.Typ));
       else
         Err('Cannot write values of type ' + TypeName(E.Typ));
       end;
@@ -459,12 +507,21 @@ end;
 
 function TCompiler.ParseBuiltinStmt(Id: TBI; const T: TToken): TStmt;
 var
+  S2: TEvalStmt;
   Args: TExprArray;
   S: TBuiltinStmt;
   A, B, C, D: TExpr;
   H: TType;
   I: Integer;
 begin
+  if (Id >= biStrCopy) and (Id <= biStrNew) and (Id <> biStrPas) and (Id <> biStrLen) then
+  begin
+    { the Strings routines may be called as procedures (extended syntax) }
+    S2 := TEvalStmt.Create;
+    S2.E := ParseBuiltinFunc(Id, T);
+    S2.Line := T.Line;
+    Exit(S2);
+  end;
   if Id <= biAddr then ErrAt('''' + T.Text + ''' is a function and cannot be used as a statement', T);
   if Id = biWrite then Exit(ParseWrite(False, T));
   if Id = biWriteLn then Exit(ParseWrite(True, T));
@@ -503,7 +560,7 @@ begin
         NeedArgs(Args, 1, 2, T);
         A := LValueOf(Args[0]);
         H := HostOf(A.Typ);
-        if not (H.Kind in [tyInt, tyChar, tyEnum]) then Err('Ordinal variable expected');
+        if not (H.Kind in [tyInt, tyChar, tyEnum]) and not IsPCharT(H) then Err('Ordinal variable expected');
         if Length(Args) = 2 then S := MakeProc(Id, [A, IntArg(Args[1])]) else S := MakeProc(Id, [A]);
       end;
     biNew:
@@ -518,10 +575,20 @@ begin
     biDispose, biFreeMem:
       begin
         NeedArgs(Args, 1, 2, T);
-        A := LValueOf(Args[0]);
+        if Id = biDispose then A := RValue(Args[0]) else A := LValueOf(Args[0]);
         if HostOf(A.Typ).Kind <> tyPtr then Err('Pointer variable expected');
         if Length(Args) = 2 then RValue(Args[1]);
         S := MakeProc(Id, [A]);
+      end;
+    biStrDispose:
+      begin
+        NeedArgs(Args, 1, 1, T);
+        S := MakeProc(Id, [PCharArg(Args[0])]);
+      end;
+    biRunError:
+      begin
+        NeedArgs(Args, 0, 1, T);
+        if Length(Args) = 1 then S := MakeProc(Id, [IntArg(Args[0])]) else S := MakeProc(Id, []);
       end;
     biGetMem:
       begin

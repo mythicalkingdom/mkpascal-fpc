@@ -166,6 +166,22 @@ type
     function IsLValue: Boolean; override;
   end;
 
+  { p[i] of a PChar: the character i places after the one p points to }
+  TPtrIndexAddr = class(TAddrExpr)
+  public
+    Base, Index: TExpr;
+    constructor Create(ABase, AIndex: TExpr; AType: TType);
+    function EvalA(C: TRun): TAddr; override;
+  end;
+
+  { a PChar used as a string }
+  TPCharToStr = class(TExpr)
+  public
+    E: TExpr;
+    constructor Create(AE: TExpr; AType: TType);
+    procedure EvalS(C: TRun; out S: ShortString); override;
+  end;
+
   { element of an open array parameter: the slot holds the address and the highest index }
   TOpenIndexAddr = class(TAddrExpr)
   public
@@ -456,6 +472,13 @@ type
     function Exec(C: TRun): TSig; override;
   end;
 
+  { a function call used as a statement; the result is dropped }
+  TEvalStmt = class(TStmt)
+  public
+    E: TExpr;
+    function Exec(C: TRun): TSig; override;
+  end;
+
   TCallStmt = class(TStmt)
   public
     Call: TCallExpr;
@@ -582,6 +605,51 @@ destructor TRoutine.Destroy;
 begin
   Params.Free;
   inherited Destroy;
+end;
+
+{ ---------------- PChar ---------------- }
+
+constructor TPtrIndexAddr.Create(ABase, AIndex: TExpr; AType: TType);
+begin
+  inherited Create;
+  Base := ABase;
+  Index := AIndex;
+  Typ := AType;
+end;
+
+function TPtrIndexAddr.EvalA(C: TRun): TAddr;
+var
+  B: Int64;
+begin
+  B := Base.EvalI(C);
+  if B = 0 then raise EMKRuntime.CreateCode(204);
+  Result := TAddr(B + Index.EvalI(C));
+end;
+
+constructor TPCharToStr.Create(AE: TExpr; AType: TType);
+begin
+  inherited Create;
+  E := AE;
+  Typ := AType;
+end;
+
+procedure TPCharToStr.EvalS(C: TRun; out S: ShortString);
+var
+  A: TAddr;
+  N, B: Integer;
+begin
+  A := TAddr(E.EvalI(C));
+  S := '';
+  if A = 0 then Exit;
+  N := 0;
+  while N < 255 do
+  begin
+    B := Integer(C.Mem.GetInt(A + TAddr(N), 1, False));
+    if B = 0 then Break;
+    Inc(N);
+    S[N] := Chr(B);
+  end;
+  SetLength(S, N);
 end;
 
 { ---------------- open arrays ---------------- }
@@ -1657,6 +1725,12 @@ begin
   end;
   A := Dst.EvalA(C);
   StoreValue(C, Src, A, Dst.Typ);
+  Result := sgNone;
+end;
+
+function TEvalStmt.Exec(C: TRun): TSig;
+begin
+  E.EvalI(C);
   Result := sgNone;
 end;
 

@@ -116,6 +116,19 @@ dates gives size only), `GetFTime`/`SetFTime` use the open file (`pendingTime` i
   builds the slot in `TCallExpr.Invoke` (`TArg.IsOpen`): an actual array passes its address and bounds, an open array
   parameter passes its slot on (`FromOpen`), and a *value* parameter gets a private heap copy freed when the call ends.
 
+## Strings and Objects units
+
+- `PChar` is `TTypeStore.TPChar` (`^Char`). `Compiler.PCharArg` turns a string constant (null terminated copy in global
+  memory via `AddInit`) or a zero based char array lvalue (`TAddrOf`) into a PChar; `Coerce` also converts such arrays and
+  PChar to `string` (`TPCharToStr`). `p[i]` is `TPtrIndexAddr`, `p+n`/`p-q` are `TIntBin` with `wNone`/`wI32`.
+  The `biStr*` routines live in `StrFunc` (mkp_builtins) over `CLen`/`CByte`; used as statements they become `TEvalStmt`.
+- `Dispose` takes an rvalue pointer (`Dispose(PObject(@Self), Done)`), no longer an lvalue.
+- `Objects` is real Pascal in `units/OBJECTS.PAS`; `tools/embed_units.py` (`make units`) generates `src/mkp_stdunits.pas`
+  (committed). `UseUnit` asks the host's unit source first, then `StdUnitSource`.
+- Method prototypes inside an object declaration are laid out before the object's size is known, so
+  `ParseObjectDecl` recomputes every method's parameter offsets and frame size once `Obj.Size` is set (a by-value
+  parameter of the object's own type used to overlap the frame).
+
 ## Tests
 
 - `tests/cases/NAME.pas` + `NAME.out` (+ `.in` lines for ReadLn, `.keys` for ReadKey), run by `bin/runtests`;
@@ -133,5 +146,5 @@ subranges, strings, arrays, records with variants, sets, pointers, files); const
 procedures/functions (nested, forward, value/var/const/untyped parameters, recursion); all statements except
 `goto`; System/Crt/file builtins; console and file I/O with `{$I-}`; heap; session API and limits.
 
-Not yet: performance work (specialised nodes for common patterns), `Strings`/`Objects` units, non-local `goto`. Verified against real code: the MKSTRING unit (35 routines, conditional
+Not yet: performance work (specialised nodes for common patterns), non-local `goto`. Verified against real code: the MKSTRING unit (35 routines, conditional
 compilation, includes, string idioms) gives the same output as the JavaScript interpreter.

@@ -15,7 +15,10 @@ type
     biOdd, biOrd, biChr, biSucc, biPred, biLength, biCopy, biPos, biConcat, biUpCase, biLowerCase,
     biUpperCase, biRandom, biEof, biEoln, biSeekEof, biSeekEoln, biFilePos, biFileSize, biIOResult,
     biHi, biLo, biSwap, biParamCount, biParamStr, biSizeOf, biHigh, biLow, biReadKey, biKeyPressed,
-    biWhereX, biWhereY, biAssigned, biMemAvail, biMaxAvail, biTypeOf, biDosVersion, biGetEnv, biFExpand, biAddr,
+    biWhereX, biWhereY, biAssigned, biMemAvail, biMaxAvail, biTypeOf, biDosVersion, biGetEnv, biFExpand,
+    biStrLen, biStrEnd, biStrMove, biStrCopy, biStrECopy, biStrLCopy, biStrPCopy, biStrCat, biStrLCat, biStrComp,
+    biStrIComp, biStrLComp, biStrLIComp, biStrScan, biStrRScan, biStrPos, biStrUpper, biStrLower, biStrPas,
+    biStrNew, biAddr,
     // procedures
     biInc, biDec, biNew, biDispose, biGetMem, biFreeMem, biFillChar, biMove, biInsert, biDelete, biStr,
     biVal, biHalt, biRandomize, biInclude, biExclude, biAssign, biReset, biRewrite, biAppend, biClose,
@@ -23,6 +26,7 @@ type
     biClrScr, biClrEol, biGotoXY, biTextColor, biTextBackground, biDelay, biSound, biNoSound,
     biHighVideo, biLowVideo, biNormVideo, biExit, biBreak, biContinue, biFail, biGetDate, biGetTime,
     biFSplit, biFindFirst, biFindNext, biFindClose, biGetFTime, biSetFTime, biPackTime, biUnpackTime,
+    biStrDispose, biRunError,
     biWrite, biWriteLn, biRead, biReadLn);
 
   TBuiltinExpr = class(TExpr)
@@ -50,7 +54,7 @@ type
     function Exec(C: TRun): TSig; override;
   end;
 
-  TWriteKind = (wkInt, wkReal, wkBool, wkChar, wkStr, wkEnum);
+  TWriteKind = (wkInt, wkReal, wkBool, wkChar, wkStr, wkEnum, wkPChar);
 
   TWriteItem = class
   public
@@ -128,6 +132,202 @@ begin
   Result := S;
 end;
 
+{ ---- null terminated strings (the Strings unit) ---- }
+
+function CLen(C: TRun; A: TAddr): Integer;
+begin
+  Result := 0;
+  while C.Mem.GetInt(A + TAddr(Result), 1, False) <> 0 do Inc(Result);
+end;
+
+function CByte(C: TRun; A: TAddr; I: Integer): Integer;
+begin
+  Result := Integer(C.Mem.GetInt(A + TAddr(I), 1, False));
+end;
+
+function CFold(B: Integer; IgnoreCase: Boolean): Integer;
+begin
+  Result := B;
+  if IgnoreCase and (B >= 97) and (B <= 122) then Result := B - 32;
+end;
+
+function CCompare(C: TRun; A, B: TAddr; MaxLen: Integer; IgnoreCase: Boolean): Integer;
+var
+  I, X, Y: Integer;
+begin
+  I := 0;
+  while (MaxLen < 0) or (I < MaxLen) do
+  begin
+    X := CFold(CByte(C, A, I), IgnoreCase);
+    Y := CFold(CByte(C, B, I), IgnoreCase);
+    if X <> Y then Exit(X - Y);
+    if X = 0 then Exit(0);
+    Inc(I);
+  end;
+  Result := 0;
+end;
+
+function CToString(C: TRun; A: TAddr; MaxLen: Integer): string;
+var
+  N, B: Integer;
+begin
+  Result := '';
+  if A = 0 then Exit;
+  N := 0;
+  while N < MaxLen do
+  begin
+    B := CByte(C, A, N);
+    if B = 0 then Break;
+    Result := Result + Chr(B);
+    Inc(N);
+  end;
+end;
+
+function StrFunc(C: TRun; Id: TBI; const Args: array of TExpr): Int64;
+var
+  D, S: TAddr;
+  N, M, I, J, Room: Integer;
+  Ch: Integer;
+  Str: ShortString;
+  Found: Boolean;
+begin
+  Result := 0;
+  case Id of
+    biStrLen: Result := CLen(C, TAddr(Args[0].EvalI(C)));
+    biStrEnd:
+      begin
+        S := TAddr(Args[0].EvalI(C));
+        Result := S + TAddr(CLen(C, S));
+      end;
+    biStrMove:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        N := Integer(Args[2].EvalI(C));
+        if N > 0 then C.Mem.Copy(S, D, LongWord(N));
+        Result := D;
+      end;
+    biStrCopy, biStrECopy:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        N := CLen(C, S);
+        C.Mem.Copy(S, D, LongWord(N + 1));
+        if Id = biStrCopy then Result := D else Result := D + TAddr(N);
+      end;
+    biStrLCopy:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        M := Integer(Args[2].EvalI(C));
+        N := CLen(C, S);
+        if N > M then N := M;
+        if N > 0 then C.Mem.Copy(S, D, LongWord(N));
+        C.Mem.PutInt(D + TAddr(N), 1, 0);
+        Result := D;
+      end;
+    biStrPCopy:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        Args[1].EvalS(C, Str);
+        N := Length(Str);
+        for I := 1 to N do C.Mem.PutInt(D + TAddr(I - 1), 1, Ord(Str[I]));
+        C.Mem.PutInt(D + TAddr(N), 1, 0);
+        Result := D;
+      end;
+    biStrCat:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        N := CLen(C, S);
+        C.Mem.Copy(S, D + TAddr(CLen(C, D)), LongWord(N + 1));
+        Result := D;
+      end;
+    biStrLCat:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        M := Integer(Args[2].EvalI(C));
+        I := CLen(C, D);
+        Room := M - I;
+        if Room > 0 then
+        begin
+          N := CLen(C, S);
+          if N > Room then N := Room;
+          if N > 0 then C.Mem.Copy(S, D + TAddr(I), LongWord(N));
+          C.Mem.PutInt(D + TAddr(I + N), 1, 0);
+        end;
+        Result := D;
+      end;
+    biStrComp: Result := CCompare(C, TAddr(Args[0].EvalI(C)), TAddr(Args[1].EvalI(C)), -1, False);
+    biStrIComp: Result := CCompare(C, TAddr(Args[0].EvalI(C)), TAddr(Args[1].EvalI(C)), -1, True);
+    biStrLComp:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        Result := CCompare(C, D, S, Integer(Args[2].EvalI(C)), False);
+      end;
+    biStrLIComp:
+      begin
+        D := TAddr(Args[0].EvalI(C));
+        S := TAddr(Args[1].EvalI(C));
+        Result := CCompare(C, D, S, Integer(Args[2].EvalI(C)), True);
+      end;
+    biStrScan, biStrRScan:
+      begin
+        S := TAddr(Args[0].EvalI(C));
+        Ch := Integer(Args[1].EvalI(C));
+        N := CLen(C, S);
+        if Ch = 0 then Exit(S + TAddr(N));
+        Result := 0;
+        for I := 0 to N - 1 do
+          if CByte(C, S, I) = Ch then
+          begin
+            Result := S + TAddr(I);
+            if Id = biStrScan then Break;
+          end;
+      end;
+    biStrPos:
+      begin
+        S := TAddr(Args[0].EvalI(C));
+        D := TAddr(Args[1].EvalI(C));
+        N := CLen(C, S);
+        M := CLen(C, D);
+        Result := 0;
+        if M = 0 then Exit;
+        for I := 0 to N - M do
+        begin
+          Found := True;
+          for J := 0 to M - 1 do
+            if CByte(C, S, I + J) <> CByte(C, D, J) then begin Found := False; Break; end;
+          if Found then Exit(S + TAddr(I));
+        end;
+      end;
+    biStrUpper, biStrLower:
+      begin
+        S := TAddr(Args[0].EvalI(C));
+        N := CLen(C, S);
+        for I := 0 to N - 1 do
+        begin
+          Ch := CByte(C, S, I);
+          if (Id = biStrUpper) and (Ch >= 97) and (Ch <= 122) then C.Mem.PutInt(S + TAddr(I), 1, Ch - 32)
+          else if (Id = biStrLower) and (Ch >= 65) and (Ch <= 90) then C.Mem.PutInt(S + TAddr(I), 1, Ch + 32);
+        end;
+        Result := S;
+      end;
+    biStrNew:
+      begin
+        S := TAddr(Args[0].EvalI(C));
+        if S = 0 then Exit(0);
+        N := CLen(C, S);
+        if N = 0 then Exit(0);
+        D := C.Mem.Alloc(LongWord(N + 1));
+        C.Mem.Copy(S, D, LongWord(N + 1));
+        Result := D;
+      end;
+  end;
+end;
+
 { ---------------- functions ---------------- }
 
 function TBuiltinExpr.EvalI(C: TRun): Int64;
@@ -196,6 +396,7 @@ begin
     biMemAvail, biMaxAvail: Result := C.Mem.HeapFree;
     biTypeOf: Result := C.Mem.GetInt(Args[0].EvalA(C) + TAddr(Aux), 2, False);
     biDosVersion: Result := $0007;
+    biStrLen..biStrLower, biStrNew: Result := StrFunc(C, Id, Args);
     biNew:
       begin
         // New(PType, Init(...)): Args[0] = scratch pointer variable, Args[1] = the constructor call
@@ -291,6 +492,7 @@ begin
         S := U;
       end;
     biGetEnv: S := '';
+    biStrPas: S := CToString(C, TAddr(Args[0].EvalI(C)), 255);
     biFExpand:
       begin
         Args[0].EvalS(C, T);
@@ -404,11 +606,20 @@ begin
         end;
       biDispose:
         begin
-          A := Args[0].EvalA(C);
-          B := TAddr(C.Mem.GetInt(A, 4, False));
+          B := TAddr(Args[0].EvalI(C));
           if B = 0 then raise EMKRuntime.CreateCode(204);
           if Length(Args) > 1 then Args[1].EvalI(C);          // the destructor
           C.Mem.FreeBlock(B);
+        end;
+      biStrDispose:
+        begin
+          B := TAddr(Args[0].EvalI(C));
+          if B <> 0 then C.Mem.FreeBlock(B);
+        end;
+      biRunError:
+        begin
+          if Length(Args) > 0 then N := Args[0].EvalI(C) else N := 0;
+          raise EMKRuntime.CreateCode(Integer(N));
         end;
       biFail:
         begin
@@ -687,6 +898,7 @@ begin
     wkBool: if It.Expr.EvalI(C) <> 0 then Result := FmtPad('TRUE', W) else Result := FmtPad('FALSE', W);
     wkChar: Result := FmtPad(Chr(Byte(It.Expr.EvalI(C))), W);
     wkStr: begin It.Expr.EvalS(C, S); Result := FmtPad(S, W); end;
+    wkPChar: Result := FmtPad(CToString(C, TAddr(It.Expr.EvalI(C)), 65535), W);
     wkEnum:
       begin
         V := It.Expr.EvalI(C);
@@ -897,6 +1109,28 @@ initialization
   Names.AddObject('SetFTime', TObject(PtrInt(biSetFTime)));
   Names.AddObject('PackTime', TObject(PtrInt(biPackTime)));
   Names.AddObject('UnpackTime', TObject(PtrInt(biUnpackTime)));
+  Names.AddObject('StrLen', TObject(PtrInt(biStrLen)));
+  Names.AddObject('StrEnd', TObject(PtrInt(biStrEnd)));
+  Names.AddObject('StrMove', TObject(PtrInt(biStrMove)));
+  Names.AddObject('StrCopy', TObject(PtrInt(biStrCopy)));
+  Names.AddObject('StrECopy', TObject(PtrInt(biStrECopy)));
+  Names.AddObject('StrLCopy', TObject(PtrInt(biStrLCopy)));
+  Names.AddObject('StrPCopy', TObject(PtrInt(biStrPCopy)));
+  Names.AddObject('StrCat', TObject(PtrInt(biStrCat)));
+  Names.AddObject('StrLCat', TObject(PtrInt(biStrLCat)));
+  Names.AddObject('StrComp', TObject(PtrInt(biStrComp)));
+  Names.AddObject('StrIComp', TObject(PtrInt(biStrIComp)));
+  Names.AddObject('StrLComp', TObject(PtrInt(biStrLComp)));
+  Names.AddObject('StrLIComp', TObject(PtrInt(biStrLIComp)));
+  Names.AddObject('StrScan', TObject(PtrInt(biStrScan)));
+  Names.AddObject('StrRScan', TObject(PtrInt(biStrRScan)));
+  Names.AddObject('StrPos', TObject(PtrInt(biStrPos)));
+  Names.AddObject('StrUpper', TObject(PtrInt(biStrUpper)));
+  Names.AddObject('StrLower', TObject(PtrInt(biStrLower)));
+  Names.AddObject('StrPas', TObject(PtrInt(biStrPas)));
+  Names.AddObject('StrNew', TObject(PtrInt(biStrNew)));
+  Names.AddObject('StrDispose', TObject(PtrInt(biStrDispose)));
+  Names.AddObject('RunError', TObject(PtrInt(biRunError)));
   Names.AddObject('Write', TObject(PtrInt(biWrite)));
   Names.AddObject('WriteLn', TObject(PtrInt(biWriteLn)));
   Names.AddObject('Read', TObject(PtrInt(biRead)));

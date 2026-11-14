@@ -17,6 +17,9 @@ bin/test_api: tests/test_api.pas $(SRC)
 bin/embed: examples/embed.pas $(SRC)
 	$(FPC) $(FLAGS) examples/embed.pas
 
+units: tools/embed_units.py $(wildcard units/*.PAS)
+	python3 tools/embed_units.py
+
 test: all
 	bin/runtests tests/cases
 	bin/test_api
@@ -24,4 +27,4 @@ test: all
 clean:
 	rm -rf build/* bin/*
 
-.PHONY: all test clean
+.PHONY: all test clean units

@@ -1,0 +1,48 @@
+program Strings1;
+uses Strings;
+var
+  buf: array[0..79] of char;
+  b2: array[0..39] of char;
+  p, q: PChar;
+  s: string;
+  i: integer;
+begin
+  StrCopy(buf, 'Hello');
+  StrCat(buf, ', World');
+  WriteLn(StrLen(buf));
+  WriteLn(buf);
+  s := StrPas(buf);
+  WriteLn(s, '|', Length(s));
+  StrPCopy(b2, 'turbo pascal');
+  StrUpper(b2);
+  WriteLn(b2);
+  StrLower(b2);
+  WriteLn(StrComp(b2, 'turbo pascal'), ' ', StrIComp('ABC', 'abd'), ' ', StrLComp('abcX', 'abcY', 3));
+  p := StrScan(buf, 'W');
+  WriteLn(p);
+  WriteLn(p - PChar(@buf));
+  q := StrRScan(buf, 'o');
+  WriteLn(q - p);
+  p := StrPos(buf, 'lo');
+  WriteLn(p);
+  WriteLn(StrScan(buf, 'z') = nil);
+  p := StrEnd(buf);
+  WriteLn(p - buf);
+  p := StrNew('allocated');
+  WriteLn(p, ' ', p[0], p[3]);
+  Inc(p, 2);
+  WriteLn(p^, ' ', StrLen(p));
+  Dec(p, 2);
+  StrDispose(p);
+  StrLCopy(b2, 'truncate me', 4);
+  WriteLn(b2);
+  StrLCat(b2, 'abcdefgh', 6);
+  WriteLn(b2);
+  q := StrECopy(b2, 'xy');
+  StrCopy(q, 'zz');
+  WriteLn(b2);
+  b2[1] := 'Q';
+  WriteLn(b2);
+  s := b2;
+  WriteLn(s);
+end.

@@ -240,6 +240,7 @@ begin
   DefType('String', T.TString);
   DefType('Text', T.TText);
   DefType('Pointer', T.TPointer);
+  DefType('PChar', T.TPChar);
   DefConst('True', TConstInt.Create(1, T.TBoolean));
   DefConst('False', TConstInt.Create(0, T.TBoolean));
   DefConst('MaxInt', TConstInt.Create(32767, T.TInteger));
@@ -451,6 +452,11 @@ begin
   if IsSym('^') then
   begin
     Next;
+    if AcceptKw('string') then
+    begin
+      Result := FImage.Types.PtrType(FImage.Types.TString);
+      Exit;
+    end;
     if Tok.Kind <> tkIdent then Err('Type name expected');
     Result := FImage.Types.PtrType(nil);
     Result.BaseName := Tok.Text;
