@@ -1,0 +1,6 @@
+circle at 0,0 area 27.0
+[sq] square at 1,1 area 16.0
+shape at 2,2 area 0.0
+done circle
+done square
+done shape

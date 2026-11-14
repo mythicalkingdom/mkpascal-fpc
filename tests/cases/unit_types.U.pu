@@ -1,0 +1,3 @@
+unit U; interface type Color = (Red, Green, Blue); PNode = ^TNode; TNode = record c: Color; next: PNode end;
+const Names: array[Color] of string = ('red', 'green', 'blue'); Limit: integer = 3;
+function NewNode(c: Color; n: PNode): PNode; implementation function NewNode(c: Color; n: PNode): PNode; var p: PNode; begin new(p); p^.c := c; p^.next := n; NewNode := p end; end.

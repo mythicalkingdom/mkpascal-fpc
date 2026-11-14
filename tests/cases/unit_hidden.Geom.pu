@@ -1,0 +1,22 @@
+unit Geom;
+interface
+const Version = 2;
+type
+  TPoint = record x, y: integer end;
+  TBox = object
+    lo, hi: TPoint;
+    constructor Init(a, b, c, d: integer);
+    function Width: integer; virtual;
+  end;
+var Count: integer;
+procedure Bump;
+function Dist(a, b: TPoint): integer;
+function Twice(n: integer): integer;
+implementation
+var secret: integer;
+procedure Bump; begin inc(Count); inc(secret) end;
+function Twice(n: integer): integer; begin Twice := n * 2 end;
+function Dist(a, b: TPoint): integer; begin Dist := abs(a.x - b.x) + abs(a.y - b.y) + Twice(0) end;
+constructor TBox.Init(a, b, c, d: integer); begin lo.x := a; lo.y := b; hi.x := c; hi.y := d end;
+function TBox.Width: integer; begin Width := hi.x - lo.x end;
+begin Count := 100; writeln('Geom init') end.

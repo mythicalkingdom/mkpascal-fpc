@@ -1,0 +1,9 @@
+unit Bad;
+interface
+procedure P;
+implementation
+procedure P;
+begin
+  x := 1;
+end;
+end.

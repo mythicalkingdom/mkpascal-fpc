@@ -1,0 +1,1 @@
+unit Base; interface var Total: integer; function Name: string; procedure Add(n: integer); implementation function Name: string; begin Name := 'base' end; procedure Add(n: integer); begin Total := Total + n end; end.

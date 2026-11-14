@@ -1,0 +1,1 @@
+unit Mid; interface uses Base; function Name: string; procedure AddTwice(n: integer); implementation function Name: string; begin Name := 'mid' end; procedure AddTwice(n: integer); begin Add(n); Add(n) end; end.

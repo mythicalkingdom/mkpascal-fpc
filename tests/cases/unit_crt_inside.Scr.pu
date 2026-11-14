@@ -1,0 +1,1 @@
+unit Scr; interface uses Crt; procedure Hello; implementation procedure Hello; begin ClrScr; writeln('hi') end; end.

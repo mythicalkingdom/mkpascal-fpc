@@ -1,0 +1,1 @@
+unit A; interface procedure PA; implementation uses B; procedure PA; begin write('PA '); PB end; begin write('initA ') end.

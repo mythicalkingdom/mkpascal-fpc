@@ -1,0 +1,24 @@
+Unit MKTest;
+{$I MKT.Def}
+Interface
+{$IFDEF WINDOWS}
+Uses WinDos;
+{$ELSE}
+Uses Dos;
+{$ENDIF}
+Function PosLastChar(Ch: Char; St: String): Word;
+
+Implementation
+
+Function PosLastChar(Ch: Char; St: String): Word;
+  Var
+    i: Word;
+
+  Begin
+  i := Length(St);
+  While ((i > 0) and (st[i] <> ch)) Do
+    Dec(i);
+  PosLastChar := i;
+  End;
+
+End.
