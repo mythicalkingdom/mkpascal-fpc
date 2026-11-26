@@ -71,3 +71,7 @@ precedence): `TObject`, `TRect`/`TPoint`, `TStream`, `TMemoryStream`, `TDosStrea
 and written back on `Flush`/`Done`), `TCollection`, `TSortedCollection`, `TStringCollection`, `TStrCollection`, `NewStr`,
 `DisposeStr`, `Abstract`. Not included: stream registration (`Get`/`Put`), `TResourceFile`, `TStringList`. `ForEach`,
 `FirstThat`, `LastThat` take top level routines (`@Name`). `make units` regenerates `src/mkp_stdunits.pas` after editing.
+
+## License
+
+GPL-3.0-or-later, see [`LICENSE`](LICENSE).  Part of the Mythical Kingdom software.
