@@ -9,7 +9,7 @@ unit mkp_harness;
 interface
 
 uses
-  SysUtils, Classes;
+  SysUtils, Classes, HostReg;
 
 type
   { error raised by a file harness; Code is a Node-style code: ENOENT, EEXIST, EACCES, EINVAL, ENOTDIR, EPERM }
@@ -23,7 +23,10 @@ type
   TMKTerm = class
   private
     FPending: RawByteString;       // rest of a line handed out by the default ReadKey
+    FHosts: THostRegistry;
+    function GetHosts: THostRegistry;
   public
+    destructor Destroy; override;
     { send bytes to the screen; CR LF ends a line }
     procedure Write(const S: RawByteString); virtual; abstract;
     { blocking: one line of input, without its end of line.  False when the input is closed }
@@ -41,8 +44,11 @@ type
     procedure EndSession; virtual;
     function HasPrinter: Boolean; virtual;
     { HostCall(Cmd): a question to the program the interpreter is embedded in; the answer is text.  Err <> '' is a run-time error
-      (code 300) with that text.  The default has no host. }
+      (code 300) with that text.  The default asks the registry of host commands (HostReg: Hosts.Add('prefix', ...) adds the commands of the
+      embedding program or of a unit it uses); with none added there is no host.  An embedder with its own idea overrides it. }
     function HostCall(const Cmd: RawByteString; out Err: string): RawByteString; virtual;
+    { the registry of host commands of this terminal (made when first used) }
+    property Hosts: THostRegistry read GetHosts;
   end;
 
   { stdin / stdout }
@@ -227,10 +233,32 @@ begin
   Result := False;
 end;
 
-function TMKTerm.HostCall(const Cmd: RawByteString; out Err: string): RawByteString;
+destructor TMKTerm.Destroy;
 begin
-  Result := '';
-  Err := 'there is no host to ask';
+  FHosts.Free;
+  inherited Destroy;
+end;
+
+function TMKTerm.GetHosts: THostRegistry;
+begin
+  if FHosts = nil then FHosts := THostRegistry.Create;
+  Result := FHosts;
+end;
+
+function TMKTerm.HostCall(const Cmd: RawByteString; out Err: string): RawByteString;
+var
+  E: AnsiString;
+begin
+  if FHosts <> nil then
+  begin
+    Result := FHosts.Call(Cmd, E);
+    Err := E;
+  end
+  else
+  begin
+    Result := '';
+    Err := 'there is no host to ask';
+  end;
 end;
 
 { ---------------- TConsoleTerm ---------------- }

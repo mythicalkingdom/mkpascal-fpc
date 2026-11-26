@@ -131,7 +131,7 @@ dates gives size only), `GetFTime`/`SetFTime` use the open file (`pendingTime` i
 
 ## Host calls
 
-`HostCall(Cmd: string): string` is a predeclared function (`biHostCall`): a question to the program the interpreter is embedded in, answered by `TMKTerm.HostCall(Cmd, Err)` (a virtual method like `ReadKey`; the default has no host and the call is run-time error 300 "Host call failed: ..."). A non-empty `Err` is the same error with that text. Added for mk's scripts (`../mk-fpc/MHOST-PLAN.md`); tested from mk (`tests/hosttest.py`).
+`HostCall(Cmd: string): string` (the default `TMKTerm.HostCall` asks `Hosts`, the registry of host commands of `../mkhostreg-fpc`: `Term.Hosts.Add('prefix', 'description', 'commands', @Handler)`; the unit is found with `-Fu../mkhostreg-fpc/src`, see the Makefile) is a predeclared function (`biHostCall`): a question to the program the interpreter is embedded in, answered by `TMKTerm.HostCall(Cmd, Err)` (a virtual method like `ReadKey`; the default has no host and the call is run-time error 300 "Host call failed: ..."). A non-empty `Err` is the same error with that text. Added for mk's scripts (`../mk-fpc/MHOST-PLAN.md`); tested from mk (`tests/hosttest.py`).
 
 ## Tests
 

@@ -4,7 +4,7 @@ program test_api;
 
 uses
   {$IFDEF UNIX} cthreads, {$ENDIF}
-  SysUtils, Classes, DateUtils, mkp_harness, mkpascal;
+  SysUtils, Classes, DateUtils, mkp_harness, mkpascal, HostReg;
 
 var
   Failures, Total: Integer;
@@ -21,6 +21,10 @@ begin
 end;
 
 type
+  THostDemo = class
+    function Handle(const Verb: string; Args: TStrings; Res: THostResult; out Err: string): Boolean;
+  end;
+
   TBreaker = class(TThread)
   public
     S: TMKSession;
@@ -28,6 +32,18 @@ type
   protected
     procedure Execute; override;
   end;
+
+function THostDemo.Handle(const Verb: string; Args: TStrings; Res: THostResult; out Err: string): Boolean;
+begin
+  Result := True;
+  if Verb = 'demo.list' then
+  begin
+    Res.Table(['name', 'n']);
+    Res.Row(['alpha', '1']);
+    Res.Row(['beta', '2']);
+  end
+  else begin Err := 'no such demo command'; Result := False; end;
+end;
 
 constructor TBreaker.Create(ASession: TMKSession);
 begin
@@ -58,6 +74,7 @@ var
   T: TBufferTerm;
   F: TMemoryFiles;
   St: TMKRunStatus;
+  Demo: THostDemo;
   B: TBreaker;
   Dir: string;
   D: TDiskFiles;
@@ -257,6 +274,28 @@ begin
   Check(T.Output = Txt + Txt, 'a program can be run again');
   S.Free; F.Free; T.Free;
 
+  { host commands: the registry of the terminal (HostReg) }
+  S := Fresh(T, F);
+  Check(S.LoadSource('program t; begin writeln(HostCall(''x'')) end.'), 'HostCall compiles');
+  St := S.Run;
+  Check((St = rsError) and (S.ExitCode = 300) and (Pos('there is no host to ask', T.Output) > 0), 'HostCall without a registry is run-time error 300: ' + Norm(T.Output));
+  S.Free; F.Free; T.Free;
+  S := Fresh(T, F);
+  Demo := THostDemo.Create;
+  T.Hosts.Add('demo', 'a demo', 'list', @Demo.Handle);
+  S.LoadSource('program t; var n, i, c: integer; s: string; begin Val(HostCall(''demo.list''), n, c);' +
+    ' for i := 1 to n do writeln(HostCall(''field '' + chr(48 + i) + '' name''), ''/'', HostCall(''field '' + chr(48 + i) + '' n''));' +
+    ' writeln(HostCall(''=demo.list'')); writeln(HostCall(''host.list'')); end.');
+  St := S.Run;
+  Check((St = rsEnd) and (Pos('alpha/1', T.Output) > 0) and (Pos('beta/2', T.Output) > 0), 'a provider of the terminal answers: ' + Norm(T.Output));
+  S.Free; F.Free; T.Free;
+  S := Fresh(T, F);
+  T.Hosts.Add('demo', 'a demo', 'list', @Demo.Handle);
+  S.LoadSource('program t; begin writeln(HostCall(''demo.nope'')) end.');
+  St := S.Run;
+  Check((St = rsError) and (Pos('no such demo command', T.Output) > 0), 'an error of the provider is run-time error 300 with its text: ' + Norm(T.Output));
+  S.Free; F.Free; T.Free;
+  Demo.Free;
   WriteLn(Total - Failures, ' of ', Total, ' API checks passed');
   if Failures > 0 then Halt(1);
 end.

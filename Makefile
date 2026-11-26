@@ -1,6 +1,6 @@
 # MKPascal-FPC build.  Requires Free Pascal 3.2.x (fpc).
 FPC     ?= fpc
-FLAGS   = -Mobjfpc -Sh -O2 -vewn -Fu$(CURDIR)/src -FU$(CURDIR)/build -FE$(CURDIR)/bin
+FLAGS   = -Mobjfpc -Sh -O2 -vewn -Fu$(CURDIR)/src -Fu$(CURDIR)/../mkhostreg-fpc/src -FU$(CURDIR)/build -FE$(CURDIR)/bin
 SRC     = $(wildcard src/*.pas src/*.inc)
 
 all: bin/mkpas bin/runtests bin/test_api bin/embed
