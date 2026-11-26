@@ -15,7 +15,7 @@ type
     biOdd, biOrd, biChr, biSucc, biPred, biLength, biCopy, biPos, biConcat, biUpCase, biLowerCase,
     biUpperCase, biRandom, biEof, biEoln, biSeekEof, biSeekEoln, biFilePos, biFileSize, biIOResult,
     biHi, biLo, biSwap, biParamCount, biParamStr, biSizeOf, biHigh, biLow, biReadKey, biKeyPressed,
-    biWhereX, biWhereY, biAssigned, biMemAvail, biMaxAvail, biTypeOf, biDosVersion, biGetEnv, biFExpand,
+    biWhereX, biWhereY, biAssigned, biMemAvail, biMaxAvail, biTypeOf, biDosVersion, biGetEnv, biFExpand, biHostCall,
     biStrLen, biStrEnd, biStrMove, biStrCopy, biStrECopy, biStrLCopy, biStrPCopy, biStrCat, biStrLCat, biStrComp,
     biStrIComp, biStrLComp, biStrLIComp, biStrScan, biStrRScan, biStrPos, biStrUpper, biStrLower, biStrPas,
     biStrNew, biAddr,
@@ -452,6 +452,8 @@ var
   T, U: ShortString;
   I, N, K: Int64;
   Idx: Integer;
+  HostErr: string;
+  HostEx: EMKRuntime;
 begin
   S := '';
   case Id of
@@ -492,6 +494,18 @@ begin
         S := U;
       end;
     biGetEnv: S := '';
+    biHostCall:
+      begin
+        Args[0].EvalS(C, T);
+        U := C.Term.HostCall(T, HostErr);
+        if HostErr <> '' then
+        begin
+          HostEx := EMKRuntime.CreateCode(300);
+          HostEx.Message := 'Host call failed: ' + HostErr;
+          raise HostEx;
+        end;
+        S := U;
+      end;
     biStrPas: S := CToString(C, TAddr(Args[0].EvalI(C)), 255);
     biFExpand:
       begin
@@ -1097,6 +1111,7 @@ initialization
   Names.AddObject('TypeOf', TObject(PtrInt(biTypeOf)));
   Names.AddObject('DosVersion', TObject(PtrInt(biDosVersion)));
   Names.AddObject('GetEnv', TObject(PtrInt(biGetEnv)));
+  Names.AddObject('HostCall', TObject(PtrInt(biHostCall)));
   Names.AddObject('FExpand', TObject(PtrInt(biFExpand)));
   Names.AddObject('Fail', TObject(PtrInt(biFail)));
   Names.AddObject('GetDate', TObject(PtrInt(biGetDate)));

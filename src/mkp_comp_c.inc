@@ -299,7 +299,7 @@ begin
         NeedArgs(Args, 0, 0, T);
         B := MakeFn(Id, [], FImage.Types.TWord);
       end;
-    biGetEnv, biFExpand:
+    biGetEnv, biFExpand, biHostCall:
       begin
         NeedArgs(Args, 1, 1, T);
         B := MakeFn(Id, [StrArg(Args[0])], FImage.Types.TString);
@@ -357,7 +357,7 @@ begin
   { fold calls on constants (Chr(27), Length('abc'), Ord('A') ...) }
   if not (Id in [biRandom, biEof, biEoln, biSeekEof, biSeekEoln, biFilePos, biFileSize, biIOResult,
                  biParamCount, biParamStr, biReadKey, biKeyPressed, biWhereX, biWhereY, biMemAvail, biMaxAvail,
-                 biTypeOf, biDosVersion, biGetEnv, biFExpand, biStrLen..biStrNew]) then
+                 biTypeOf, biDosVersion, biGetEnv, biFExpand, biHostCall, biStrLen..biStrNew]) then
   begin
     Folds := True;
     for I := 0 to High(B.Args) do

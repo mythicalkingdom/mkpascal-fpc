@@ -129,6 +129,10 @@ dates gives size only), `GetFTime`/`SetFTime` use the open file (`pendingTime` i
   `ParseObjectDecl` recomputes every method's parameter offsets and frame size once `Obj.Size` is set (a by-value
   parameter of the object's own type used to overlap the frame).
 
+## Host calls
+
+`HostCall(Cmd: string): string` is a predeclared function (`biHostCall`): a question to the program the interpreter is embedded in, answered by `TMKTerm.HostCall(Cmd, Err)` (a virtual method like `ReadKey`; the default has no host and the call is run-time error 300 "Host call failed: ..."). A non-empty `Err` is the same error with that text. Added for mk's scripts (`../mk-fpc/MHOST-PLAN.md`); tested from mk (`tests/hosttest.py`).
+
 ## Tests
 
 - `tests/cases/NAME.pas` + `NAME.out` (+ `.in` lines for ReadLn, `.keys` for ReadKey), run by `bin/runtests`;

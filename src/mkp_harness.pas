@@ -40,6 +40,9 @@ type
     procedure PrinterWrite(const S: RawByteString); virtual;   // default: not available
     procedure EndSession; virtual;
     function HasPrinter: Boolean; virtual;
+    { HostCall(Cmd): a question to the program the interpreter is embedded in; the answer is text.  Err <> '' is a run-time error
+      (code 300) with that text.  The default has no host. }
+    function HostCall(const Cmd: RawByteString; out Err: string): RawByteString; virtual;
   end;
 
   { stdin / stdout }
@@ -222,6 +225,12 @@ end;
 function TMKTerm.HasPrinter: Boolean;
 begin
   Result := False;
+end;
+
+function TMKTerm.HostCall(const Cmd: RawByteString; out Err: string): RawByteString;
+begin
+  Result := '';
+  Err := 'there is no host to ask';
 end;
 
 { ---------------- TConsoleTerm ---------------- }
