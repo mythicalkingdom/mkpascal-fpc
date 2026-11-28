@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 program mkpas;
 // Run a Pascal program on the console:  mkpas program.pas [parameters]
 // Units, include files and data files are read from (and written to) the program's directory.

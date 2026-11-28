@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_run;
 // Run time state and services: the memory, stack pointers, console input, Pascal files on top of the
 // file harness, limits, break handling, Random and number formatting.

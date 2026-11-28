@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkpascal;
 // MKPascal: a Turbo Pascal style interpreter you can embed.
 //

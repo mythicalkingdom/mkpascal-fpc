@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_nodes;
 // The executable tree the compiler builds.  Expressions know their type; ordinals, pointers and
 // procedures evaluate to Int64, reals to Double, strings to ShortString, sets to a 32 byte bitmap, and

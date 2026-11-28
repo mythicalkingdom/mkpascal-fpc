@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 { ===================== part C: predeclared routines, statements, program ===================== }
 
 { ---------------- argument lists ---------------- }

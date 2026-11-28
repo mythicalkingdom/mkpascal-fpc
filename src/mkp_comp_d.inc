@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 { ===================== part D: units and objects ===================== }
 
 { ---------------- units ---------------- }

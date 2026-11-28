@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Regenerates src/mkp_stdunits.pas from units/*.PAS (run `make units`)."""
 import glob, os, sys
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

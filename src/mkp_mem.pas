@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_mem;
 // The byte addressed memory every Pascal variable lives in: global variables, the stack and the heap.
 // Records, arrays, strings (length byte + characters) and sets have their Turbo Pascal layout, so

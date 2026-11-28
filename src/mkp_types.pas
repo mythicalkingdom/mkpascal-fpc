@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_types;
 // Type descriptors.  Every Pascal type knows its size in bytes in the Turbo Pascal layout, because
 // variables live in a byte addressed memory (see mkp_mem).

@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_defs;
 { shared exceptions and runtime error texts }
 {$mode objfpc}{$H+}

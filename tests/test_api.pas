@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 program test_api;
 // Tests of the embedding API: limits, break, harnesses, error reporting.
 {$mode objfpc}{$H+}

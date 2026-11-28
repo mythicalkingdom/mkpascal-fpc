@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_builtins;
 // Predeclared procedures and functions (System, Crt, files) as executable nodes, and the
 // Write/Read statements.

@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_harness;
 { The two things a host gives an MKPascal session:
     TMKTerm   the terminal (output, line and key input, cursor, colours)

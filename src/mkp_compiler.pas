@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_compiler;
 // One pass compiler: parses Pascal source and builds the executable tree (mkp_nodes) directly,
 // checking types as it goes.

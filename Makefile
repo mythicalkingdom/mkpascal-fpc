@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # MKPascal-FPC build.  Requires Free Pascal 3.2.x (fpc).
 FPC     ?= fpc
 FLAGS   = -Mobjfpc -Sh -O2 -vewn -Fu$(CURDIR)/src -Fu$(CURDIR)/../mkhostreg-fpc/src -FU$(CURDIR)/build -FE$(CURDIR)/bin

@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 program runtests;
 // Runs every tests/cases/NAME.pas and compares the output with NAME.out.
 //   NAME.in   (optional) lines of input for ReadLn

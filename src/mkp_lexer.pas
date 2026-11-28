@@ -1,3 +1,4 @@
+{ SPDX-License-Identifier: GPL-3.0-or-later }
 unit mkp_lexer;
 // Tokenizer: comments, compiler directives (include files, conditional compilation, switches such as
 // the range check switch), numbers, strings, symbols.  All tokens are produced up front.
